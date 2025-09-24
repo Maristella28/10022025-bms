@@ -24,7 +24,13 @@ export const withSecurityWrapper = (WrappedComponent) => {
 
       // Cleanup
       return () => {
-        document.head.removeChild(metaCSP);
+        try {
+          if (metaCSP && metaCSP.parentNode) {
+            document.head.removeChild(metaCSP);
+          }
+        } catch (error) {
+          console.warn('Failed to remove meta tag during cleanup:', error);
+        }
       };
     }, []);
 

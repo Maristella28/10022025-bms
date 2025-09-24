@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
+import axiosInstance from '../utils/axiosConfig';
+import { isProfileComplete } from '../utils/profileValidation';
 
 const RequireProfileCompletion = ({ children }) => {
   const navigate = useNavigate();
@@ -10,24 +12,38 @@ const RequireProfileCompletion = ({ children }) => {
   useEffect(() => {
     const checkProfileCompletion = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/check-profile-completion', {
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-          }
-        });
-
-        const data = await response.json();
+        const response = await axiosInstance.get('/profile');
+        const profile = response.data;
         
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to check profile completion');
+        // Primary check: If backend says profile_completed is true, treat as complete
+        const backendComplete = profile.profile_completed === true || profile.profile_completed === 1 || profile.profile_completed === '1';
+        
+        // Secondary check: If verification is approved and has essential fields
+        const verificationApproved = profile.verification_status === 'approved';
+        let fieldValidationComplete = false;
+        
+        if (verificationApproved) {
+          const hasEssentialFields = profile.first_name && profile.last_name && profile.current_address;
+          const hasPhoto = profile.current_photo || profile.avatar;
+          const hasResidencyImage = profile.residency_verification_image;
+          fieldValidationComplete = hasEssentialFields && hasPhoto && hasResidencyImage;
         }
-
-        setProfileComplete(data.isComplete);
         
-        if (!data.isComplete) {
+        // Use backend flag as primary indicator, fallback to field validation
+        const complete = backendComplete || fieldValidationComplete;
+        
+        console.log('RequireProfileCompletion check:', {
+          backendComplete,
+          verificationApproved,
+          fieldValidationComplete,
+          finalResult: complete,
+          profile_completed: profile.profile_completed,
+          verification_status: profile.verification_status
+        });
+        
+        setProfileComplete(complete);
+        
+        if (!complete) {
           // Show warning message
           const warningDiv = document.createElement('div');
           warningDiv.className = 'fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50 flex items-center shadow-lg';
@@ -49,10 +65,12 @@ const RequireProfileCompletion = ({ children }) => {
           }, 3000);
 
           // Redirect to profile page
-          navigate('/residents/profile');
+          navigate('/user/profile');
         }
       } catch (error) {
         console.error('Error checking profile completion:', error);
+        // On error, assume incomplete to be safe
+        setProfileComplete(false);
       } finally {
         setLoading(false);
       }

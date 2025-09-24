@@ -12,8 +12,6 @@ import {
   User, Mail, Phone, Calendar, Home, MapPin, BadgeCheck,
   Landmark, Cake, Image as ImageIcon, Edit2, Save, X, ArrowLeft, AlertCircle, CheckCircle
 } from 'lucide-react';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
 
 // Lightweight inline progress component
 const ProgressSteps = ({ currentStep = 1, labels = [] }) => {
@@ -118,9 +116,11 @@ const Profile = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  // Show Congratulations only once using localStorage
+  // Show Congratulations when profile is completed - use localStorage to track if already shown
   const [showCongrats, setShowCongrats] = useState(() => {
-    return !localStorage.getItem('profileCongratsShown');
+    // Only show if profile is complete AND we haven't shown it before for this session
+    const hasShownCongrats = sessionStorage.getItem('congratsShownForSession');
+    return !hasShownCongrats;
   });
 
   // Derived states for progress tracking
@@ -148,18 +148,35 @@ const Profile = () => {
   
   // Updated logic for current step:
   // Step 1: Not verified
-  // Step 2: Verified but editing or no profile yet or profile not completed
-  // Step 3: Verified, has profile, completed, and not editing
+  // Step 2: Verified but profile not completed or currently editing
+  // Step 3: Verified and profile completed
   const currentStep = !isVerified ? 1 : 
-    (isEditing || !isFullyCompleted) ? 2 : 3;
+    (!isFullyCompleted || isEditing) ? 2 : 3;
 
   // Hide progress bar if Congratulations has already been shown
   const hideProgressBar = currentStep === 3 && !showCongrats;
+  
+  // Show congratulations when profile becomes complete - but only once per session
+  useEffect(() => {
+    if (isFullyCompleted && !loading && !showCongrats) {
+      const hasShownCongrats = sessionStorage.getItem('congratsShownForSession');
+      if (!hasShownCongrats) {
+        console.log('[DEBUG] Profile is fully completed, showing congratulations');
+        setShowCongrats(true);
+        sessionStorage.setItem('congratsShownForSession', 'true');
+      }
+    }
+  }, [isFullyCompleted, loading, showCongrats]);
 
   const handleGoDashboard = () => {
-    localStorage.setItem('profileCongratsShown', 'true');
     setShowCongrats(false);
-    navigate('/residents/profile');
+    navigate('/residents/dashboard');
+  };
+
+  // Function to handle edit button click - clear congratulations state
+  const handleEditProfile = () => {
+    setShowCongrats(false);
+    setIsEditing(true);
   };
 
   // Step 3: Profile Completed Screen
@@ -215,6 +232,12 @@ const Profile = () => {
         if (!profile) return;
         
         console.log('Initial profile load:', profile); // Debug log
+        console.log('Profile ID fields:', {
+          resident_id: profile.resident_id,
+          residents_id: profile.residents_id,
+          id: profile.id,
+          allKeys: Object.keys(profile)
+        }); // Debug log for ID fields
         
         // If profile is approved and new, set editing mode
         if (profile.verification_status === 'approved' && !profile.profile_completed) {
@@ -395,10 +418,16 @@ const Profile = () => {
               console.log('[DEBUG] Profile completed status:', profile.profile_completed);
               return newForm;
             });
-            // Exit editing mode when profile is completed
+            // Exit editing mode when profile is completed and show congratulations (only if not shown before)
             if (profile.profile_completed === true || profile.profile_completed === 1 || profile.profile_completed === '1') {
               console.log('[DEBUG] Profile is completed, exiting edit mode');
               setIsEditing(false);
+              const hasShownCongrats = sessionStorage.getItem('congratsShownForSession');
+              if (!hasShownCongrats) {
+                console.log('[DEBUG] Showing congratulations for first time');
+                setShowCongrats(true);
+                sessionStorage.setItem('congratsShownForSession', 'true');
+              }
             }
           }
         } catch (e) {
@@ -561,29 +590,36 @@ const Profile = () => {
             )
           )}
 
-          <div className="bg-white/95 shadow-xl rounded-3xl border border-gray-100 overflow-hidden mt-4 mb-10 w-full max-w-5xl mx-auto flex flex-col items-center" style={{zIndex: 20, position: 'relative'}}>
-            <div className="p-6 md:p-14 flex flex-col items-center w-full">
-              {/* Show only residency verification when not verified, full profile when verified */}
-              {form.verification_status === 'approved' ? (
-                // Show profile form when verified
-                <>
-                  {currentStep === 3 && showCongrats ? (
-                    <ProfileCompleted />
-                  ) : !isEditing ? (
-                    <ReadOnlyView form={form} setIsEditing={setIsEditing} />
-                  ) : (
-                    <EditableForm 
-                      form={form} 
-                      handleChange={handleChange} 
-                      handleSubmit={handleSubmit} 
-                      setIsEditing={setIsEditing}
-                      submitting={submitting}
-                    />
-                  )}
-                </>
-              ) : (
-                // Show verification form when not verified
-                <div className="w-full">
+          {/* Main Profile Content */}
+          <div className="w-full max-w-5xl mx-auto">
+            {/* Show only residency verification when not verified, full profile when verified */}
+            {form.verification_status === 'approved' ? (
+              // Show profile form when verified
+              <>
+                {currentStep === 3 && showCongrats ? (
+                  <ProfileCompleted />
+                ) : (
+                  <div className="bg-white/95 shadow-xl rounded-3xl border border-gray-100 overflow-hidden mt-4 mb-10">
+                    <div className="p-6 md:p-14">
+                      {!isEditing ? (
+                        <ReadOnlyView form={form} setIsEditing={setIsEditing} onEditClick={handleEditProfile} />
+                      ) : (
+                        <EditableForm 
+                          form={form} 
+                          handleChange={handleChange} 
+                          handleSubmit={handleSubmit} 
+                          setIsEditing={setIsEditing}
+                          submitting={submitting}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              // Show verification form when not verified
+              <div className="bg-white/95 shadow-xl rounded-3xl border border-gray-100 overflow-hidden mt-4 mb-10">
+                <div className="p-6 md:p-14">
                   <ResidencyVerification 
                     form={form} 
                     onImageUpload={() => {
@@ -604,8 +640,8 @@ const Profile = () => {
                     }}
                   />
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
           <div className="h-4"></div>
         </div>
@@ -614,7 +650,7 @@ const Profile = () => {
   );
 };
 
-const ReadOnlyView = ({ form, setIsEditing }) => {
+const ReadOnlyView = ({ form, setIsEditing, onEditClick }) => {
   // Create a dynamic timestamp for cache-busting that updates when form.current_photo changes
   const avatarTimestamp = React.useMemo(() => Date.now(), [form.current_photo]);
 
@@ -623,7 +659,11 @@ const ReadOnlyView = ({ form, setIsEditing }) => {
     if (value === true && form.verification_status !== 'approved') {
       return; // Prevent editing if not verified
     }
-    setIsEditing(value);
+    if (value === true && onEditClick) {
+      onEditClick(); // Use the custom edit handler
+    } else {
+      setIsEditing(value);
+    }
   };
 
   return (
@@ -657,15 +697,22 @@ const ReadOnlyView = ({ form, setIsEditing }) => {
           {/* Name and ID */}
           <div className="text-center space-y-3">
             <h2 className="text-3xl font-extrabold text-green-800">
-              {form.first_name} {form.middle_name} {form.last_name} {form.name_suffix !== 'none' ? form.name_suffix : ''}
+              {form.first_name || 'First Name'} {form.middle_name || 'Middle Name'} {form.last_name || 'Last Name'} {form.name_suffix && form.name_suffix !== 'none' ? form.name_suffix : ''}
             </h2>
 
-            {form.residents_id && (
+            {(form.resident_id || form.residents_id || form.id) && (
               <div className="flex items-center justify-center gap-2">
                 <BadgeCheck className="w-5 h-5 text-green-600" />
                 <span className="bg-green-100 text-green-700 px-4 py-2 text-sm rounded-full font-semibold shadow-sm">
-                  Resident ID: {form.residents_id}
+                  Resident ID: {form.resident_id || form.residents_id || form.id}
                 </span>
+              </div>
+            )}
+            
+            {/* Debug: Show all ID fields for troubleshooting */}
+            {!form.resident_id && !form.residents_id && !form.id && (
+              <div className="text-xs text-gray-400 mt-2">
+                Debug: resident_id: {form.resident_id || 'null'}, residents_id: {form.residents_id || 'null'}, id: {form.id || 'null'}
               </div>
             )}
 
@@ -686,6 +733,10 @@ const ReadOnlyView = ({ form, setIsEditing }) => {
           Personal Information
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <InfoCard icon={<User className="w-5 h-5" />} label="First Name" value={form.first_name || '—'} />
+          <InfoCard icon={<User className="w-5 h-5" />} label="Middle Name" value={form.middle_name || '—'} />
+          <InfoCard icon={<User className="w-5 h-5" />} label="Last Name" value={form.last_name || '—'} />
+          <InfoCard icon={<User className="w-5 h-5" />} label="Name Suffix" value={form.name_suffix && form.name_suffix !== 'none' ? form.name_suffix : '—'} />
           <InfoCard
             icon={<Calendar className="w-5 h-5" />}
             label="Birthdate"
@@ -699,7 +750,7 @@ const ReadOnlyView = ({ form, setIsEditing }) => {
           <InfoCard icon={<User className="w-5 h-5" />} label="Sex" value={form.sex || '—'} />
           <InfoCard icon={<MapPin className="w-5 h-5" />} label="Birth Place" value={form.birth_place || '—'} />
           <InfoCard icon={<User className="w-5 h-5" />} label="Nationality" value={form.nationality || '—'} />
-            <InfoCard icon={<Phone className="w-5 h-5" />} label="Mobile Number" value={form.mobile_number || '—'} />
+          <InfoCard icon={<Phone className="w-5 h-5" />} label="Mobile Number" value={form.mobile_number || '—'} />
           <InfoCard icon={<Landmark className="w-5 h-5" />} label="Civil Status" value={form.civil_status || '—'} />
           <InfoCard icon={<MapPin className="w-5 h-5" />} label="Religion" value={form.religion || '—'} />
           <InfoCard icon={<User className="w-5 h-5" />} label="Relation to Head" value={form.relation_to_head || '—'} />
@@ -927,19 +978,6 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
 
   // Prevent submit if missing required fields
   const canSubmit = missingFields.length === 0;
-  {missingFields.length > 0 && (
-    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-center gap-3 w-full max-w-2xl mx-auto shadow">
-      <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
-      <div className="flex-1">
-        <p className="text-yellow-800 font-medium">Please complete all required fields to finish your profile:</p>
-        <ul className="list-disc ml-6 text-yellow-700 text-sm mt-2">
-          {missingFields.map(field => (
-            <li key={field}>{fieldLabels[field] || field}</li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  )}
   // Safety check: if verification is not approved, don't render the form
   if (form.verification_status !== 'approved') {
     return (
@@ -957,6 +995,21 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
+    {/* Missing Fields Warning */}
+    {missingFields.length > 0 && (
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-center gap-3 w-full shadow">
+        <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="text-yellow-800 font-medium">Please complete all required fields to finish your profile:</p>
+          <ul className="list-disc ml-6 text-yellow-700 text-sm mt-2">
+            {missingFields.map(field => (
+              <li key={field}>{fieldLabels[field] || field}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    )}
+    
     {/* Profile Picture Section */}
     <div className="flex flex-col items-center w-full">
       <div className="w-full bg-green-50 rounded-xl flex flex-col items-center py-10 mb-8 shadow-sm">
@@ -1021,25 +1074,13 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-700">Birth Date</label>
-          <DatePicker
-            selected={form.birth_date ? new Date(form.birth_date) : null}
-            onChange={date => {
-              const fakeEvent = {
-                target: {
-                  name: 'birth_date',
-                  value: date ? date.toISOString().split('T')[0] : ''
-                }
-              };
-              handleChange(fakeEvent);
-            }}
-            dateFormat="yyyy-MM-dd"
-            maxDate={new Date()}
-            showMonthDropdown
-            showYearDropdown
-            dropdownMode="select"
-            placeholderText="Select birth date"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md bg-white"
-            wrapperClassName="w-full"
+          <input
+            type="date"
+            name="birth_date"
+            value={form.birth_date || ''}
+            onChange={handleChange}
+            max={new Date().toISOString().split('T')[0]}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
           />
           {form.age && (
             <p className="text-xs text-green-600 font-medium">

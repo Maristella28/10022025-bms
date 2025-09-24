@@ -48,14 +48,16 @@ export default function Login() {
     setIsSuccess(false);
 
     try {
-      await login(email, password);
+      const userData = await login(email, password);
 
       setStatus('Login successful! Redirecting...');
       setIsSuccess(true);
 
-      // Get user data from localStorage or context
-      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      // Use the user data returned from login function
       const { role, has_logged_in } = userData;
+      
+      console.log('Login successful, user data:', userData);
+      console.log('User role:', role);
 
       // For residents, check residency verification status
       if (role === 'residents') {
@@ -143,7 +145,8 @@ export default function Login() {
             navigate('/staff/dashboard');
             break;
           default:
-            navigate('/');
+            console.log('Unknown role, redirecting to dashboard');
+            navigate(`/${role}/dashboard`);
         }
       }, 1000);
 

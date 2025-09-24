@@ -1,21 +1,51 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { routeConfig } from '../config/routes';
+import axiosInstance from '../utils/axiosConfig';
 
 // Helper to check if a profile is truly complete
 function isProfileComplete(profile) {
-  if (!profile) return false;
-  // If backend says profile_completed is 1 or '1', treat as complete
-  if (profile.profile_completed === 1 || profile.profile_completed === '1' || profile.profile_completed === true) {
+  if (!profile) {
+    console.log('ProtectedRoute: No profile data available');
+    return false;
+  }
+  
+  console.log('ProtectedRoute isProfileComplete check:', {
+    profile_completed: profile.profile_completed,
+    verification_status: profile.verification_status,
+    hasResidencyImage: !!profile.residency_verification_image,
+    hasPhoto: !!(profile.current_photo || profile.avatar),
+    profileKeys: Object.keys(profile)
+  });
+  
+  // Primary check: If backend says profile_completed is true, treat as complete
+  if (profile.profile_completed === true || profile.profile_completed === 1 || profile.profile_completed === '1') {
+    console.log('ProtectedRoute: Profile marked as complete by backend');
     return true;
   }
-  // Otherwise, check for required fields (customize as needed)
-  const requiredFields = [
-    'first_name', 'last_name', 'birth_date', 'email', 'contact_number',
-    'sex', 'civil_status', 'religion', 'full_address', 'years_in_barangay', 'voter_status',
-  ];
-  return requiredFields.every(field => profile[field]);
+  
+  // Secondary check: If verification is approved and has essential fields
+  const verificationApproved = profile.verification_status === 'approved';
+  if (verificationApproved) {
+    const hasEssentialFields = profile.first_name && profile.last_name && profile.current_address;
+    const hasPhoto = profile.current_photo || profile.avatar;
+    const hasResidencyImage = profile.residency_verification_image;
+    
+    const isComplete = hasEssentialFields && hasPhoto && hasResidencyImage;
+    console.log('ProtectedRoute: Profile completion by verification check:', {
+      verificationApproved,
+      hasEssentialFields,
+      hasPhoto,
+      hasResidencyImage,
+      isComplete
+    });
+    
+    return isComplete;
+  }
+  
+  console.log('ProtectedRoute: Profile not complete');
+  return false;
 }
 
 // Helper to check if residency verification is complete
@@ -31,6 +61,46 @@ const ProtectedRoute = ({ children }) => {
   const pathParts = location.pathname.split('/').filter(Boolean); // Remove empty strings
   const currentPath = pathParts[0]; // First part (role)
   const modulePath = pathParts[1]; // Second part (module)
+  
+  // Use the same profile completion check as Sidebares for consistency
+  const [profileComplete, setProfileComplete] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
+  
+  const checkProfileStatus = async () => {
+    if (!user) {
+      setProfileComplete(false);
+      setProfileLoading(false);
+      return;
+    }
+    
+    try {
+      console.log('ProtectedRoute: Checking profile status via API...');
+      const response = await axiosInstance.get('/profile-status');
+      const data = response.data;
+      
+      console.log('ProtectedRoute: Profile status response:', data);
+      setProfileComplete(data.isComplete);
+    } catch (error) {
+      console.error('ProtectedRoute: Error checking profile status:', error);
+      // Fallback to local check if API fails
+      setProfileComplete(isProfileComplete(user.profile));
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+  
+  // Check profile status when user changes
+  useEffect(() => {
+    if (user && !isLoading) {
+      checkProfileStatus();
+    }
+  }, [user, isLoading]);
+
+  // Don't check profile completion while still loading user data or profile status
+  if (isLoading || profileLoading) {
+    console.log('ProtectedRoute: Still loading user data or profile status, allowing access');
+    return children;
+  }
 
   // Function to check if user has permission for a module
   const hasModulePermission = (module) => {
@@ -76,6 +146,7 @@ const ProtectedRoute = ({ children }) => {
   }
 
   if (!user) {
+    console.log('ProtectedRoute: No user found, redirecting to login');
     return <Navigate to="/login" replace />;
   }
 
@@ -141,7 +212,7 @@ const ProtectedRoute = ({ children }) => {
     }
     
     // If profile is complete and verified, allow access to all resident routes
-    if (isProfileComplete(user.profile) && isResidencyVerificationComplete(user.profile)) {
+    if (profileComplete && isResidencyVerificationComplete(user.profile)) {
       // Profile is complete - allow access to all resident routes
       return children;
     }
@@ -155,7 +226,7 @@ const ProtectedRoute = ({ children }) => {
     ];
     
     if (!allowedPathsForIncompleteProfile.includes(location.pathname)) {
-      if (!isProfileComplete(user.profile)) {
+      if (!profileComplete) {
         return <Navigate to="/user/profile" replace />;
       }
       if (!isResidencyVerificationComplete(user.profile)) {

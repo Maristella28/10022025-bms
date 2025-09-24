@@ -251,7 +251,7 @@ const StatusAssetRequests = () => {
             >
               Refresh
             </button>
-            <Link to="/residents/requestassets">
+            <Link to="/residents/requestAssets">
               <button className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-5 rounded shadow">
                 ← Back to Request Assets
               </button>

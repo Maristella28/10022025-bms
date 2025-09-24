@@ -18,6 +18,7 @@ use App\Http\Controllers\DisasterEmergencyRecordController;
 use App\Http\Controllers\FinancialRecordController;
 use App\Http\Controllers\DocumentRequestController;
 use App\Http\Controllers\ActivityLogController;
+use App\Http\Controllers\ProfileStatusController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\ResidencyStatusController;
 use App\Http\Controllers\BeneficiaryController;
@@ -199,7 +200,7 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
 
         // 👥 Residents list
         Route::get('/residents', [ResidentProfileController::class, 'index']);
-        Route::get('/admin/residents', [ResidentController::class, 'index']);
+        Route::get('/residents-list', [ResidentController::class, 'index']);
         Route::get('/residents-deleted', [ResidentController::class, 'trashed']); // Get soft deleted residents
         
         // 📊 Reporting Module - MUST come before {id} routes to avoid conflicts
@@ -349,8 +350,7 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
     Route::delete('/asset-requests/{id}', [AssetRequestController::class, 'destroy'])->whereNumber('id');
     Route::get('/asset-requests/{id}', [AssetRequestController::class, 'show'])->whereNumber('id');
 
-    // Blotter Requests
-    Route::post('/blotter-requests', [BlotterRequestController::class, 'store']);
+    // Blotter Requests - REMOVED DUPLICATE (already defined in profile.complete middleware group above)
 
     // 📋 Projects CRUD (Admin only)
     // Route::apiResource('/projects', App\Http\Controllers\ProjectController::class); // Moved inside admin group
@@ -408,6 +408,9 @@ Route::get('/profile/test', function() {
         'auth_required' => true
     ]);
 });
+
+// Simple profile status check endpoint
+Route::get('/profile-status', [ProfileStatusController::class, 'check'])->middleware('auth:sanctum');
 
 // Simple test route to verify API is working
 Route::get('/test-api', function() {

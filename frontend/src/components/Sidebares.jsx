@@ -4,177 +4,68 @@ import {
   LayoutDashboard, Lightbulb, FileText, Package, CalendarDays,
   Network, UserSquare, ClipboardList, AlertCircle
 } from 'lucide-react';
-import axiosInstance from '../utils/axiosConfig';
-import { isProfileComplete, getMissingFields } from '../utils/profileValidation';
+import { useAuth } from '../contexts/AuthContext';
 import { useOptimizedNavigation } from '../hooks/useNavigation';
+import axiosInstance from '../utils/axiosConfig';
 
 const Sidebares = memo(() => {
   const location = useLocation();
   const navigate = useNavigate();
   const { preloadModule } = useOptimizedNavigation();
-  const [profileStatus, setProfileStatus] = useState(() => {
-    // Initialize with cached data if available
-    const cached = sessionStorage.getItem('sidebarProfileStatus');
-    return cached ? JSON.parse(cached) : { isComplete: false, loading: true };
-  });
+  const { user, isLoading } = useAuth();
   const [showWarning, setShowWarning] = useState(false);
 
-  // Memoized profile status check function
-  const checkProfileStatus = useCallback(async (forceRefresh = false) => {
-    try {
-      // Check cache first (unless force refresh)
-      if (!forceRefresh) {
-        const cached = sessionStorage.getItem('sidebarProfileStatus');
-        const cacheTime = sessionStorage.getItem('sidebarProfileStatusTime');
-        const isRecent = cacheTime && (Date.now() - parseInt(cacheTime)) < 30000; // 30 seconds
-        
-        if (cached && isRecent) {
-          const cachedData = JSON.parse(cached);
-          setProfileStatus(cachedData);
-          return;
-        }
-      }
-
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Sidebares: Fetching fresh profile data...');
-        }
-      
-      // Try to get profile data
-      let response;
-      try {
-        response = await axiosInstance.get('/profile');
-      } catch (firstErr) {
-        console.warn('First profile endpoint failed, trying fallback:', firstErr);
-        try {
-          response = await axiosInstance.get('/user/profile');
-        } catch (secondErr) {
-          console.warn('Second profile endpoint failed, trying debug endpoint:', secondErr);
-          response = await axiosInstance.get('/profile/debug');
-        }
-      }
-
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Sidebares: Profile response received:', response?.data);
-      }
-
-    // Backend often returns { user: ..., profile: { ... } }
-    // Normalize to the actual profile object when present
-  const raw = response.data;
-  let profile = null;
-  if (raw && raw.profile) profile = raw.profile;
-  else if (raw && raw.user && raw.user.profile) profile = raw.user.profile;
-  else profile = raw;
-
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Sidebares: Normalized profile:', profile);
-        }
-
-  const missingFields = getMissingFields(profile);
-  const completeFromFn = isProfileComplete(profile);
-  // Be defensive: require both checks to agree (no missing fields and fn=true)
-  const complete = completeFromFn && missingFields.length === 0;
-
-        // Compute completeness
-        let finalComplete = complete;
-
-        // If verification is denied or residency verification image missing, require action
-        if (profile && (profile.verification_status === 'denied' || !profile.residency_verification_image)) {
-          finalComplete = false;
-        }
-
-      const statusData = { isComplete: finalComplete, loading: false, profile, raw };
-      setProfileStatus(statusData);
-      
-      // Cache the result with safe serialization
-      try {
-        const safeStatusData = {
-          ...statusData,
-          // Ensure permissions is properly serialized
-          profile: statusData.profile ? {
-            ...statusData.profile,
-            permissions: statusData.profile.permissions && typeof statusData.profile.permissions === 'object' 
-              ? statusData.profile.permissions 
-              : null
-          } : null
-        };
-        sessionStorage.setItem('sidebarProfileStatus', JSON.stringify(safeStatusData));
-        sessionStorage.setItem('sidebarProfileStatusTime', Date.now().toString());
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Sidebares: Profile status cached successfully');
-        }
-      } catch (cacheError) {
-        console.warn('Failed to cache sidebar profile status:', cacheError);
-      }
-      
-      } catch (error) {
-        console.error('Error checking profile status:', error);
-        // Don't block navigation if we can't check the profile
-        const fallbackData = { isComplete: true, loading: false };
-        setProfileStatus(fallbackData);
-        
-        // Cache fallback too
-        try {
-          sessionStorage.setItem('sidebarProfileStatus', JSON.stringify(fallbackData));
-          sessionStorage.setItem('sidebarProfileStatusTime', Date.now().toString());
-        } catch (cacheError) {
-          console.warn('Failed to cache fallback sidebar status:', cacheError);
-        }
-      }
-    }, []);
-
-  useEffect(() => {
-    checkProfileStatus();
-
-      // Poll profile every 5 seconds to pick up admin-made permission changes
-      const interval = setInterval(() => {
-        checkProfileStatus();
-      }, 5000);
-
-    // Also re-check when tab becomes visible again
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') checkProfileStatus();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
+  // Simple profile completion check using direct API call
+  const [profileComplete, setProfileComplete] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
+  
+  const checkProfileStatus = useCallback(async () => {
+    if (!user) {
+      setProfileComplete(false);
+      setProfileLoading(false);
+      return;
+    }
     
-      // Listen for manual profile update events
-      const onProfileUpdated = (event) => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Profile update event received, refreshing status:', event.detail);
-        }
-        // Clear cache and force refresh when profile is updated
-        sessionStorage.removeItem('sidebarProfileStatus');
-        sessionStorage.removeItem('sidebarProfileStatusTime');
-        checkProfileStatus(true);
-      };
-      window.addEventListener('profile-updated', onProfileUpdated);
+    try {
+      console.log('Sidebares: Checking profile status via API...');
+      const response = await axiosInstance.get('/profile-status');
+      const data = response.data;
+      
+      console.log('Sidebares: Profile status response:', data);
+      setProfileComplete(data.isComplete);
+    } catch (error) {
+      console.error('Sidebares: Error checking profile status:', error);
+      // Fallback to false if API fails
+      setProfileComplete(false);
+    } finally {
+      setProfileLoading(false);
+    }
+  }, [user]);
+  
+  // Check profile status when user changes or when location changes to profile page
+  useEffect(() => {
+    if (user && !isLoading) {
+      checkProfileStatus();
+    }
+  }, [user, isLoading, checkProfileStatus]);
+  
+  // Refresh profile status when navigating to profile page
+  useEffect(() => {
+    if (location.pathname === '/user/profile' && user && !isLoading) {
+      console.log('Sidebares: Refreshing profile status on profile page navigation');
+      checkProfileStatus();
+    }
+  }, [location.pathname, user, isLoading, checkProfileStatus]);
 
-      // Listen for profile refresh requests
-      const onProfileRefreshRequested = (event) => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Profile refresh requested:', event.detail);
-        }
-        // Clear cache and force refresh when profile refresh is requested
-        sessionStorage.removeItem('sidebarProfileStatus');
-        sessionStorage.removeItem('sidebarProfileStatusTime');
-        checkProfileStatus(true);
-      };
-      window.addEventListener('profile-refresh-requested', onProfileRefreshRequested);
-
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('profile-updated', onProfileUpdated);
-      window.removeEventListener('profile-refresh-requested', onProfileRefreshRequested);
-    };
-  }, [checkProfileStatus]);
 
   const handleNavigation = (e, path) => {
-    if (!profileStatus.isComplete && path !== '/user/profile') {
+    // Only block navigation if profile is truly incomplete
+    if (!profileComplete && path !== '/user/profile') {
       e.preventDefault();
       setShowWarning(true);
 
       // If profile exists but verification denied, send to residency-denied page
-      const profile = profileStatus.profile;
+      const profile = user?.profile;
       if (profile && profile.verification_status === 'denied') {
         setTimeout(() => navigate('/residency-denied'), 800);
         return;
@@ -188,20 +79,25 @@ const Sidebares = memo(() => {
 
       // Otherwise redirect to profile edit page
       setTimeout(() => navigate('/user/profile'), 800);
+    } else {
+      // Profile is complete, allow navigation
+      console.log('Sidebares: Allowing navigation to', path, 'profile complete:', profileComplete);
     }
   };
 
   // Route-guard effect: if the profile is incomplete and the user is on a protected route,
   // redirect them immediately (this blocks direct URL access as well as link clicks)
   useEffect(() => {
-    if (profileStatus.loading) return;
+    if (!user || isLoading || profileLoading) return; // Wait for user data and profile status to load
 
     const protectedPrefixes = ['/residents'];
     const isProtected = protectedPrefixes.some(prefix => location.pathname.startsWith(prefix));
 
-    if (!profileStatus.isComplete && isProtected && location.pathname !== '/user/profile') {
+    // Only redirect if profile is truly incomplete
+    if (!profileComplete && isProtected && location.pathname !== '/user/profile') {
+      console.log('Sidebares: Route guard redirecting due to incomplete profile');
       setShowWarning(true);
-      const profile = profileStatus.profile;
+      const profile = user?.profile;
 
       if (profile && profile.verification_status === 'denied') {
         navigate('/residency-denied');
@@ -214,8 +110,10 @@ const Sidebares = memo(() => {
       }
 
       navigate('/user/profile');
+    } else if (profileComplete) {
+      console.log('Sidebares: Route guard allowing access, profile complete');
     }
-  }, [profileStatus, location.pathname, navigate]);
+  }, [user, isLoading, profileLoading, profileComplete, location.pathname, navigate]);
 
   // Memoize menu items to prevent unnecessary re-renders
   const baseMenuItems = useMemo(() => [
@@ -227,102 +125,33 @@ const Sidebares = memo(() => {
     { title: "Organizational Chart", icon: <Network size={18} />, path: "/residents/organizationalChart" },
   ], []);
 
-  // Enhanced permissions normalization helper
-  const normalizePermissions = useCallback((permissionsData) => {
-    if (!permissionsData) return null;
-    
-    // Handle different permission data types
-    if (typeof permissionsData === "string") {
-      // Check for the problematic "[object Object]" string
-      if (permissionsData.trim() === "[object Object]") {
-        // Silently handle this common serialization issue
-        return null;
-      } else if (permissionsData.trim() !== "") {
-        // Try to parse as JSON
-        try {
-          return JSON.parse(permissionsData);
-        } catch (e) {
-          console.warn("Sidebares: Failed to parse permissions string", permissionsData, e);
-          return null;
-        }
-      } else {
-        // Empty string
-        return null;
-      }
-    } else if (typeof permissionsData === "object" && permissionsData !== null) {
-      // Already an object
-      return permissionsData;
-    } else {
-      // Unexpected type or null
-      return null;
-    }
-  }, []);
+  // Removed complex permissions normalization - using simple benefits check now
 
   // If the profile has a permission flag set by admin, show My Benefits
   const canSeeMyBenefits = useMemo(() => {
-    const p = profileStatus.profile;
-    const raw = profileStatus.raw;
-    if (!p) return false;
+    const profile = user?.profile;
+    if (!profile) return false;
     
-    // Normalize permissions using our helper
-    const permissions = normalizePermissions(p.permissions);
-    
-    // Debug logging for benefits detection (reduced)
-    if (process.env.NODE_ENV === 'development') {
-      console.log("Sidebares: Benefits detection:", {
-        my_benefits_enabled: p?.my_benefits_enabled,
-        permissions_my_benefits: permissions?.my_benefits,
-        final_result: false // Will be updated below
-      });
-    }
-
-    // More comprehensive check for enabled status
+    // Simple check for benefits enabled
     const isEnabled = !!(
-      // Check profile level flags (most common)
-      p.my_benefits_enabled === true ||
-      p.my_benefits_enabled === 'true' ||
-      p.my_benefits_enabled === 1 ||
-      p.my_benefits_enabled === '1' ||
-      p.my_benefits === true ||
-      p.my_benefits === 'true' ||
-      p.my_benefits === 1 ||
-      p.my_benefits === '1' ||
-      // Check normalized permissions object if it exists
-      (permissions && (
-        permissions.my_benefits === true ||
-        permissions.my_benefits === 'true' ||
-        permissions.my_benefits === 1 ||
-        permissions.my_benefits === '1' ||
-        permissions.my_benefits_enabled === true ||
-        permissions.my_benefits_enabled === 'true' ||
-        permissions.my_benefits_enabled === 1 ||
-        permissions.my_benefits_enabled === '1'
-      )) ||
-      // Check raw response level
-      raw?.my_benefits_enabled === true ||
-      raw?.my_benefits_enabled === 'true' ||
-      raw?.my_benefits_enabled === 1 ||
-      raw?.my_benefits_enabled === '1' ||
-      raw?.my_benefits === true ||
-      raw?.my_benefits === 'true' ||
-      raw?.my_benefits === 1 ||
-      raw?.my_benefits === '1' ||
-      // Check user level in raw response
-      raw?.user?.my_benefits_enabled === true ||
-      raw?.user?.my_benefits_enabled === 'true' ||
-      raw?.user?.my_benefits_enabled === 1 ||
-      raw?.user?.my_benefits_enabled === '1' ||
-      raw?.user?.my_benefits === true ||
-      raw?.user?.my_benefits === 'true' ||
-      raw?.user?.my_benefits === 1 ||
-      raw?.user?.my_benefits === '1'
+      profile.my_benefits_enabled === true ||
+      profile.my_benefits_enabled === 'true' ||
+      profile.my_benefits_enabled === 1 ||
+      profile.my_benefits_enabled === '1' ||
+      profile.my_benefits === true ||
+      profile.my_benefits === 'true' ||
+      profile.my_benefits === 1 ||
+      profile.my_benefits === '1'
     );
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log("Sidebares: Final benefits enabled result:", isEnabled);
-    }
+    console.log("Sidebares: Benefits detection:", {
+      my_benefits_enabled: profile.my_benefits_enabled,
+      my_benefits: profile.my_benefits,
+      final_result: isEnabled
+    });
+    
     return isEnabled;
-  }, [profileStatus.profile, profileStatus.raw, normalizePermissions]);
+  }, [user?.profile]);
 
   // Memoize final menu items including conditional My Benefits
   const menuItems = useMemo(() => {
@@ -357,7 +186,7 @@ const Sidebares = memo(() => {
             </div>
           )}
 
-          {profileStatus.loading ? (
+          {!user || isLoading || profileLoading ? (
             <div className="flex justify-center py-4">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
             </div>
@@ -365,7 +194,7 @@ const Sidebares = memo(() => {
             <ul className="space-y-1">
               {menuItems.map((item, idx) => {
                 const isActive = location.pathname === item.path;
-                const isDisabled = !profileStatus.isComplete && item.path !== '/user/profile';
+                const isDisabled = !profileComplete && item.path !== '/user/profile';
                 
                 return (
                   <li key={idx}>
@@ -405,13 +234,6 @@ const Sidebares = memo(() => {
             </ul>
           )}
           
-          {!profileStatus.loading && !profileStatus.isComplete && (
-            <div className="mt-4 p-4 bg-yellow-500/20 border border-yellow-600/30 rounded-lg">
-              <p className="text-yellow-200 text-sm text-center">
-                Complete your profile to access all features
-              </p>
-            </div>
-          )}
         </nav>
 
 

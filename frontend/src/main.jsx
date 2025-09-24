@@ -29,6 +29,22 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('Error boundary caught an error:', error, errorInfo);
+    
+    // Handle specific DOM manipulation errors
+    if (error.message && error.message.includes('removeChild')) {
+      console.warn('DOM manipulation error detected, attempting cleanup...');
+      // Clean up any lingering DOM elements that might cause issues
+      try {
+        const poppers = document.querySelectorAll('.react-datepicker-popper');
+        poppers.forEach(popper => {
+          if (popper && popper.parentNode) {
+            popper.parentNode.removeChild(popper);
+          }
+        });
+      } catch (cleanupError) {
+        console.warn('Cleanup failed:', cleanupError);
+      }
+    }
   }
 
   render() {

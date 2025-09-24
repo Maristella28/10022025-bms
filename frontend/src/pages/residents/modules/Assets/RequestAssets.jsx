@@ -59,6 +59,23 @@ const RequestAssets = () => {
       .finally(() => setLoading(false));
   }, []);
 
+  // Cleanup effect to prevent DOM manipulation errors
+  useEffect(() => {
+    return () => {
+      // Clean up any lingering DatePicker poppers
+      const poppers = document.querySelectorAll('.react-datepicker-popper');
+      poppers.forEach(popper => {
+        if (popper && popper.parentNode) {
+          try {
+            popper.parentNode.removeChild(popper);
+          } catch (e) {
+            console.warn('DatePicker cleanup warning on unmount:', e);
+          }
+        }
+      });
+    };
+  }, []);
+
   // Fetch asset details for modal
   const openDetailModal = async (assetId) => {
     setDetailModal({ open: true, asset: null });
@@ -461,6 +478,31 @@ const RequestAssets = () => {
                 placeholderText="Select available date"
                 className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 dateFormat="yyyy-MM-dd"
+                popperContainer={({ children }) => (
+                  <div className="datepicker-popper-container">
+                    {children}
+                  </div>
+                )}
+                onCalendarOpen={() => {
+                  // Ensure proper DOM cleanup
+                  const popper = document.querySelector('.react-datepicker-popper');
+                  if (popper) {
+                    popper.style.zIndex = '9999';
+                  }
+                }}
+                onCalendarClose={() => {
+                  // Clean up any lingering DOM elements
+                  const poppers = document.querySelectorAll('.react-datepicker-popper');
+                  poppers.forEach(popper => {
+                    if (popper && popper.parentNode) {
+                      try {
+                        popper.parentNode.removeChild(popper);
+                      } catch (e) {
+                        console.warn('DatePicker cleanup warning:', e);
+                      }
+                    }
+                  });
+                }}
               />
             </div>
             <div className="mb-4">

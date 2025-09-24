@@ -53,14 +53,30 @@ class AdminController extends Controller
      */
     public function residents()
     {
-        $users = User::where('role', 'residents')
-            ->with('profile') // Eager load profile data
-            ->select('id', 'name', 'email', 'created_at') // Only return needed data
-            ->orderBy('name') // Sort alphabetically
-            ->get();
+        \Log::info('AdminController::residents method called');
+        
+        try {
+            $users = User::where('role', 'residents')
+                ->with('profile') // Eager load profile data
+                ->select('id', 'name', 'email', 'created_at') // Only return needed data
+                ->orderBy('name') // Sort alphabetically
+                ->get();
 
-        return response()->json([
-            'users' => $users,
-        ]);
+            \Log::info('Found users with residents role', ['count' => $users->count()]);
+
+            return response()->json([
+                'users' => $users,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in AdminController::residents', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to fetch residents users',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 }

@@ -42,6 +42,9 @@ const StatusDocumentRequests = lazy(() => import('./pages/residents/modules/Docu
 const StatusBlotterRequests = lazy(() => import('./pages/residents/modules/Blotter/StatusBlotterRequests'));
 const BlotterAppointment = lazy(() => import('./pages/residents/BlotterAppointment'));
 const OrganizationalChart = lazy(() => import('./pages/residents/OrganizationalChart'));
+const Officials = lazy(() => import('./pages/residents/modules/OrganizationalChart/Officials'));
+const Staff = lazy(() => import('./pages/residents/modules/OrganizationalChart/Staff'));
+const CharterList = lazy(() => import('./pages/residents/CharterList'));
 const MyBenefits = lazy(() => import('./pages/residents/MyBenefits'));
 const AddFeedback = lazy(() => import('./pages/residents/AddFeedback'));
 
@@ -50,6 +53,7 @@ const ProgramDetails = lazy(() => import('./pages/admin/modules/SocialServices/P
 const CreateHousehold = lazy(() => import('./pages/admin/modules/Household/CreateHousehold'));
 const AdminEditProfile = lazy(() => import('./pages/admin/AdminEditProfile'));
 const RequestAssets = lazy(() => import('./pages/residents/modules/Assets/RequestAssets'));
+const StatusAssetRequests = lazy(() => import('./pages/residents/modules/Assets/StatusAssetRequests'));
 // Admin Staff Management (for permissions)
 const StaffManagement = lazy(() => import('./pages/admin/modules/Staff/StaffManagement'));
 // Organizational Chart Staff Management (different component)
@@ -87,11 +91,15 @@ const residentRoutesWithComponents = routeConfig.residents.map(route => ({
     "projects": withSuspense(<Projects />),
     "requestDocuments": withSuspense(<RequestDocuments />),
     "requestAssets": withSuspense(<RequestAssets />),
+    "statusassetrequests": withSuspense(<StatusAssetRequests />),
     "generateBlotter": withSuspense(<GenerateBlotter />),
     "statusDocumentRequests": withSuspense(<StatusDocumentRequests />),
     "statusBlotterRequests": withSuspense(<StatusBlotterRequests />),
     "blotterAppointment": withSuspense(<BlotterAppointment />),
     "organizationalChart": withSuspense(<OrganizationalChart />),
+    "officials": withSuspense(<Officials />),
+    "staff": withSuspense(<Staff />),
+    "charterList": withSuspense(<CharterList />),
     "myBenefits": withSuspense(<MyBenefits />),
     "addFeedback": withSuspense(<AddFeedback />)
   }[route.path] || withSuspense(<div>Page under construction</div>) // Fallback for missing components

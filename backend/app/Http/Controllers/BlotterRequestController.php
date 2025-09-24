@@ -29,11 +29,27 @@ class BlotterRequestController extends Controller
         }
 
         // Validate that the resident_id belongs to the authenticated user
+        \Log::info('Looking for resident', [
+            'user_id' => $user->id,
+            'requested_resident_id' => $residentId,
+            'user_email' => $user->email
+        ]);
+        
+        // First, let's check if the resident exists at all
+        $residentExists = \App\Models\Resident::where('id', $residentId)->first();
+        \Log::info('Resident lookup result', [
+            'resident_exists' => $residentExists ? true : false,
+            'resident_user_id' => $residentExists ? $residentExists->user_id : null,
+            'requested_user_id' => $user->id
+        ]);
+        
         $resident = \App\Models\Resident::where('id', $residentId)->where('user_id', $user->id)->first();
         if (!$resident) {
             \Log::warning('Invalid resident_id or resident does not belong to user', [
                 'user_id' => $user->id,
-                'requested_resident_id' => $residentId
+                'requested_resident_id' => $residentId,
+                'resident_exists' => $residentExists ? true : false,
+                'resident_user_id' => $residentExists ? $residentExists->user_id : null
             ]);
             return response()->json(['error' => 'Invalid resident ID or resident does not belong to you'], 403);
         }

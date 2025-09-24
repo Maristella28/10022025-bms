@@ -52,8 +52,10 @@ const AuthProvider = ({ children }) => {
       // Handle permissions based on role
       if (baseUser.role === 'admin') {
         console.log('Setting admin permissions');
+        console.log('routeConfig.common:', routeConfig.common);
         // For admin users, get all modules from routeConfig
         const adminPermissions = routeConfig.common.reduce((acc, route) => {
+          console.log('Processing route:', route.path, 'module:', route.module);
           acc[route.module] = true;
           return acc;
         }, {});
@@ -116,12 +118,25 @@ const AuthProvider = ({ children }) => {
       // Set user early so UI can render role-specific UI
       setUser(baseUser);
       localStorage.setItem('user', JSON.stringify(baseUser || {}));
+      
+      console.log('User set in AuthContext:', baseUser);
 
       // Only fetch resident profile for resident users
       if (baseUser?.role === 'residents') {
-        const profileRes = await axios.get('/profile');
+        // Add cache-busting parameter to ensure fresh data
+        const timestamp = new Date().getTime();
+        const profileRes = await axios.get(`/profile?t=${timestamp}`);
         const resident = profileRes.data;
         const userData = { ...baseUser, profile: resident.profile ?? resident };
+        
+        console.log('AuthContext: Profile data received:', {
+          profile_completed: userData.profile?.profile_completed,
+          verification_status: userData.profile?.verification_status,
+          hasResidencyImage: !!userData.profile?.residency_verification_image,
+          hasPhoto: !!(userData.profile?.current_photo || userData.profile?.avatar),
+          timestamp: timestamp
+        });
+        
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData || {}));
       }
@@ -173,12 +188,17 @@ const AuthProvider = ({ children }) => {
       // Clear any existing role/user data
       localStorage.removeItem('role');
       localStorage.removeItem('user');
+      
+      // Fetch user data and set up permissions
+      await fetchUser(true); // Force refresh to get fresh user data
+      
+      // Return the user data for immediate use
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      return userData;
     } else {
       console.warn('AuthContext login: No token received from backend');
+      throw new Error('No authentication token received');
     }
-    
-    // Fetch user data and set up permissions
-    await fetchUser();
   };
 
   // Logout
@@ -187,16 +207,18 @@ const AuthProvider = ({ children }) => {
       await axios.post('/logout', {});
     } catch (e) {}
     localStorage.removeItem('authToken');
+    sessionStorage.removeItem('congratsShownForSession'); // Clear congratulations state
     setUser(null);
   };
 
   useEffect(() => {
-      fetchUser();
+    console.log('AuthContext: useEffect triggered, fetching user...');
+    fetchUser();
   }, []);
 
   // Force refresh function for immediate updates
   const forceRefresh = async () => {
-    await fetchUser();
+    await fetchUser(true); // Force refresh to get fresh data
   };
 
   return (

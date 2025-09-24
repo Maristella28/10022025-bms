@@ -4,6 +4,7 @@ import Sidebar from "../../components/Sidebar";
 import HeaderControls from "./components/HeaderControls";
 import ResidentsTable from "./components/ResidentsTable";
 import axiosInstance from "../../utils/axiosConfig";
+import { toast } from 'react-toastify';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import {
   PlusIcon,
@@ -753,7 +754,7 @@ const ResidentsRecords = () => {
 
   const fetchResidents = async () => {
     try {
-      const res = await axiosInstance.get("/admin/residents");
+      const res = await axiosInstance.get("/admin/residents-list");
       const fetched = Array.isArray(res.data.residents) ? res.data.residents : [];
       // Attach computed update_status to each resident for consistent UI
       const withStatus = fetched.map((r) => ({ ...r, update_status: getResidentStatus(r) }));

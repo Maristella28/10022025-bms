@@ -15,13 +15,40 @@ const withProfileCompletion = (WrappedComponent) => {
       const checkProfile = async () => {
         try {
           const response = await axiosInstance.get('/profile');
-          const complete = isProfileComplete(response.data);
+          const profile = response.data;
+          
+          // Primary check: If backend says profile_completed is true, treat as complete
+          const backendComplete = profile.profile_completed === true || profile.profile_completed === 1 || profile.profile_completed === '1';
+          
+          // Secondary check: If verification is approved and has essential fields
+          const verificationApproved = profile.verification_status === 'approved';
+          let fieldValidationComplete = false;
+          
+          if (verificationApproved) {
+            const hasEssentialFields = profile.first_name && profile.last_name && profile.current_address;
+            const hasPhoto = profile.current_photo || profile.avatar;
+            const hasResidencyImage = profile.residency_verification_image;
+            fieldValidationComplete = hasEssentialFields && hasPhoto && hasResidencyImage;
+          }
+          
+          // Use backend flag as primary indicator, fallback to field validation
+          const complete = backendComplete || fieldValidationComplete;
+          
+          console.log('Profile completion check:', {
+            backendComplete,
+            verificationApproved,
+            fieldValidationComplete,
+            finalResult: complete,
+            profile_completed: profile.profile_completed,
+            verification_status: profile.verification_status
+          });
+          
           setProfileComplete(complete);
           
           if (!complete) {
             // Redirect to profile page if not on profile page
             if (!window.location.pathname.includes('/profile')) {
-              navigate('/profile', { 
+              navigate('/user/profile', { 
                 state: { 
                   returnUrl: window.location.pathname,
                   message: 'Please complete your profile to access this feature.'
@@ -31,6 +58,8 @@ const withProfileCompletion = (WrappedComponent) => {
           }
         } catch (error) {
           console.error('Error checking profile:', error);
+          // On error, assume incomplete to be safe
+          setProfileComplete(false);
         } finally {
           setLoading(false);
         }

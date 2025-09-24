@@ -198,7 +198,7 @@ const Officials = () => {
         {/* Back Button Row */}
         <div className="w-full max-w-5xl flex items-start justify-between mb-4">
           <button
-            onClick={() => navigate('/residents/OrganizationalChart')}
+            onClick={() => navigate('/residents/organizationalChart')}
             className="flex items-center gap-2 px-6 py-3 bg-white/80 backdrop-blur-xl border-2 border-green-200 rounded-full shadow-lg text-green-700 font-semibold hover:bg-green-100 hover:text-green-900 hover:shadow-green-300/60 hover:scale-105 transition-all duration-200 z-20 group"
             style={{ boxShadow: '0 4px 16px 0 rgba(52,211,153,0.15)' }}
             title="Back to Organizational Chart"

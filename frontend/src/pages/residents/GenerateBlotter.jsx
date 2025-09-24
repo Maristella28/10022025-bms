@@ -22,6 +22,8 @@ const GenerateBlotter = () => {
         // Use the /profile endpoint for the current user
         const response = await axios.get('/profile');
         const residentData = response.data.profile;
+        console.log('Profile response:', response.data);
+        console.log('Resident data from profile:', residentData);
         setResident(residentData);
       } catch (error) {
         setResident(null);
@@ -43,8 +45,8 @@ const GenerateBlotter = () => {
         setLoading(false);
         return;
       }
-      console.log('Sending resident_id:', resident.resident_id || resident.id);
-      const response = await axios.post('/blotter-requests', { resident_id: resident.resident_id || resident.id });
+      console.log('Sending resident_id:', resident.id);
+      const response = await axios.post('/blotter-requests', { resident_id: resident.id });
       setResult({ success: true, message: '✅ Your blotter request has been generated successfully!' });
     } catch (error) {
       let message = '❌ Failed to generate blotter request.';

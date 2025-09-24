@@ -93,6 +93,19 @@ class ResidentProfileController extends Controller
                 
                 $profileData = $profile->toArray();
                 
+                // ✅ CRITICAL FIX: Get the actual resident record to ensure correct ID
+                $resident = \App\Models\Resident::where('user_id', $user->id)->first();
+                if ($resident) {
+                    // Override the profile ID with the actual resident database ID
+                    $profileData['id'] = $resident->id;
+                    $profileData['resident_id'] = $resident->resident_id;
+                    \Log::info('Profile show: Updated IDs from resident record', [
+                        'profile_id' => $profile->id,
+                        'resident_database_id' => $resident->id,
+                        'resident_string_id' => $resident->resident_id
+                    ]);
+                }
+                
                 // ✅ Ensure avatar field is properly mapped for RequestDocuments.jsx
                 if (!isset($profileData['avatar']) && isset($profileData['current_photo'])) {
                     $profileData['avatar'] = $profileData['current_photo'];
