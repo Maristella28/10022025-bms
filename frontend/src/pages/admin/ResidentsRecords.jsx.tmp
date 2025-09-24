@@ -1,0 +1,168 @@
+import React, { useEffect, useState, useCallback } from "react";
+import ErrorBoundary from "../../components/ErrorBoundary";
+import Navbar from "../../components/Navbar";
+import Sidebar from "../../components/Sidebar";
+import ResidentsTable from "./components/ResidentsTable";
+import DeleteConfirmationModal from "./components/DeleteConfirmationModal";
+import axiosInstance from "../../utils/axiosConfig";
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { DocumentTextIcon } from "@heroicons/react/24/outline";
+
+const ResidentsRecords = () => {
+  // Component state
+  const [state, setState] = useState({
+    residents: [],
+    filteredResidents: [],
+    loading: true,
+    search: '',
+    statusFilter: '',
+    selectedResident: null,
+    detailLoading: false,
+    deleteModalOpen: false,
+    residentToDelete: null
+  });
+
+  // Safe state update function
+  const updateState = useCallback((updates) => {
+    setState(prevState => ({
+      ...prevState,
+      ...updates
+    }));
+  }, []);
+
+  // Core data fetching function
+  const fetchResidents = useCallback(async () => {
+    try {
+      const res = await axiosInstance.get('/residents');
+      const fetched = Array.isArray(res.data.residents) ? res.data.residents : [];
+      
+      updateState({
+        residents: fetched,
+        loading: false,
+      });
+    } catch (error) {
+      console.error('Error fetching residents:', error);
+      toast.error('Failed to fetch residents data');
+    }
+  }, [updateState]);
+
+  useEffect(() => {
+    fetchResidents();
+  }, [fetchResidents]);
+
+  const handleDelete = useCallback((resident) => {
+    try {
+      updateState({ 
+        residentToDelete: resident,
+        deleteModalOpen: true 
+      });
+    } catch (error) {
+      console.error("Error preparing delete:", error);
+      toast.error("Error preparing to delete resident. Please try again.");
+    }
+  }, [updateState]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    try {
+      const { residentToDelete } = state;
+      
+      if (!residentToDelete?.id) {
+        throw new Error("No resident selected for deletion.");
+      }
+
+      await axiosInstance.post(
+        `/admin/residents/${residentToDelete.id}/delete`
+      );
+
+      updateState({
+        deleteModalOpen: false,
+        residentToDelete: null
+      });
+      
+      toast.success("Resident has been moved to Recently Deleted.");
+      fetchResidents();
+
+    } catch (error) {
+      console.error("Failed to delete resident:", error);
+      toast.error(error.response?.data?.message || error.message || "Failed to delete resident.");
+    }
+  }, [state, updateState, fetchResidents]);
+
+  // Filter residents based on search and status
+  useEffect(() => {
+    const { residents, search, statusFilter } = state;
+    
+    const filtered = residents.filter(resident => {
+      const searchMatch = !search || resident.name?.toLowerCase().includes(search.toLowerCase());
+      const statusMatch = !statusFilter || resident.update_status === statusFilter;
+      return searchMatch && statusMatch;
+    });
+
+    updateState({ filteredResidents: filtered });
+  }, [state.residents, state.search, state.statusFilter, updateState]);
+
+  return (
+    <ErrorBoundary>
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <Sidebar />
+        <main className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen ml-64 pt-36 px-6 pb-16 font-sans transition-all duration-300">
+          <div className="w-full max-w-7xl mx-auto space-y-8">
+            {/* Header Section */}
+            <div className="text-center space-y-6">
+              <h1 className="text-4xl font-bold text-gray-900">Residents Records</h1>
+              <p className="text-gray-600">Manage and monitor resident information</p>
+            </div>
+
+            {/* Residents Table */}
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-2xl">
+              <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-white font-semibold text-lg flex items-center gap-2">
+                    <DocumentTextIcon className="w-5 h-5" />
+                    Residents
+                  </h3>
+                </div>
+              </div>
+              
+              <ResidentsTable 
+                residents={state.filteredResidents}
+                loading={state.loading}
+                onDelete={handleDelete}
+                selectedResident={state.selectedResident}
+                detailLoading={state.detailLoading}
+              />
+            </div>
+          </div>
+        </main>
+
+        {/* Delete Confirmation Modal */}
+        {state.deleteModalOpen && (
+          <DeleteConfirmationModal 
+            isOpen={state.deleteModalOpen}
+            onClose={() => updateState({ deleteModalOpen: false, residentToDelete: null })}
+            onConfirm={handleDeleteConfirm}
+            residentName={state.residentToDelete?.name || ''}
+          />
+        )}
+
+        {/* Toast Container */}
+        <ToastContainer
+          position="top-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          newestOnTop
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="light"
+        />
+      </div>
+    </ErrorBoundary>
+  );
+};
+
+export default ResidentsRecords;

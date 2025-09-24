@@ -1,0 +1,118 @@
+// App.jsx
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { AuthProvider } from './contexts/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import DynamicLayout from "./layout/DynamicLayout";
+
+// Pages
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Welcome from "./pages/Welcome";
+import EmailVerification from "./pages/EmailVerification";
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import Profile from "./pages/forms/Profile";
+import ResidencyVerification from "./pages/forms/ResidencyVerification";
+import ResidencyDenied from "./pages/residents/ResidencyDenied";
+import Congratulations from './pages/Congratulations';
+import * as AdminPages from './pages/admin';
+import * as ResidentPages from './pages/residents';
+
+// Module Pages
+import ProgramDetails from './pages/admin/modules/SocialServices/ProgramDetails';
+import CreateHousehold from './pages/admin/modules/Household/CreateHousehold';
+import AdminEditProfile from './pages/admin/AdminEditProfile';
+import RequestAssets from './pages/residents/modules/Assets/RequestAssets';
+import StaffManagement from './pages/admin/modules/Staff/StaffManagement';
+import AssetsManagement from './pages/admin/modules/Assets/AssetsManagement';
+import BlotterRequest from './pages/admin/modules/Blotter/BlotterRequest';
+import NewComplaint from './pages/admin/modules/Blotter/NewComplaint';
+import OfficialsManagement from './pages/admin/modules/Barangay Officials/OfficialsManagement';
+
+// Route configuration
+import { routeConfig } from './config/routes';
+
+// Initialize route configurations before the App component
+// Configure resident routes
+routeConfig.residents = [
+  { path: "requestAssets", element: <RequestAssets /> },
+  { path: "requestDocuments", element: <ResidentPages.RequestDocuments /> },
+  { path: "brgyClearance", element: <ResidentPages.BrgyClearance /> },
+  { path: "generateBlotter", element: <ResidentPages.GenerateBlotter /> },
+  { path: "statusBlotterRequests", element: <ResidentPages.StatusBlotterRequests /> },
+  { path: "statusDocumentRequests", element: <ResidentPages.StatusDocumentRequests /> }
+];
+
+// Configure common routes with components
+routeConfig.common = routeConfig.common.map(route => ({
+  ...route,
+  element:
+    route.path === "dashboard" ? <AdminPages.AdminDashboard /> :
+    route.path === "documentsRecords" ? <AdminPages.DocumentsRecords /> :
+    route.path === "residentsRecords" ? <AdminPages.ResidentsRecords /> :
+    route.path === "householdRecords" ? <AdminPages.HouseholdRecords /> :
+    route.path === "blotterRecords" ? <AdminPages.BlotterRecords /> :
+    route.path === "financialTracking" ? <AdminPages.FinancialTracking /> :
+    route.path === "barangayOfficials" ? <AdminPages.BarangayOfficials /> :
+    route.path === "staff" ? <StaffManagement /> :
+    route.path === "communicationAnnouncement" ? <AdminPages.CommunicationAnnouncement /> :
+    route.path === "projectManagement" ? <AdminPages.ProjectManagement /> :
+    route.path === "socialServices" ? <AdminPages.SocialServices /> :
+    route.path === "disasterEmergency" ? <AdminPages.DisasterEmergency /> :
+    route.path === "inventoryAssets" ? <AdminPages.InventoryAssets /> :
+    route.path === "activityLogs" ? <AdminPages.ActivityLogs /> :
+    null
+}));
+
+// Main App Component
+function App() {
+  const userRole = localStorage.getItem('role') || '';
+
+  return (
+    <Router>
+      <AuthProvider>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<Welcome />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+          <Route path="/email/verify" element={<EmailVerification />} />
+          <Route path="/congratulations" element={<ProtectedRoute><Congratulations /></ProtectedRoute>} />
+          <Route path="/user/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/residency-verification" element={<ResidencyVerification />} />
+          <Route path="/residency-denied" element={<ResidencyDenied />} />
+
+          {/* Admin-specific standalone routes */}
+          <Route path="/admin/assets-management" element={<ProtectedRoute role="admin"><AssetsManagement /></ProtectedRoute>} />
+          <Route path="/admin/modules/Blotter/BlotterRequest" element={<ProtectedRoute role="admin"><BlotterRequest /></ProtectedRoute>} />
+          <Route path="/admin/modules/Blotter/NewComplaint" element={<ProtectedRoute role="admin"><NewComplaint /></ProtectedRoute>} />
+          <Route path="/admin/staff-management" element={<ProtectedRoute role="admin"><StaffManagement /></ProtectedRoute>} />
+          <Route path="/admin/officials-management" element={<ProtectedRoute role="admin"><OfficialsManagement /></ProtectedRoute>} />
+
+          {/* Dynamic Layout Routes */}
+          <Route path="/:role/*" element={<ProtectedRoute><DynamicLayout /></ProtectedRoute>}>
+            {/* Common routes filtered by permissions in DynamicLayout */}
+            {routeConfig.common.map(route => (
+              <Route key={route.path} path={route.path} element={route.element} />
+            ))}
+            
+            {/* Special routes */}
+            <Route path="social-services/program/:id" element={<ProgramDetails />} />
+            <Route path="create-household" element={<CreateHousehold />} />
+            <Route path="edit-profile" element={<AdminEditProfile />} />
+            
+            {/* Resident-specific routes */}
+            {userRole === 'resident' && routeConfig.residents?.map(route => (
+              <Route key={route.path} path={route.path} element={route.element} />
+            ))}
+          </Route>
+
+          {/* 404 Fallback */}
+          <Route path="*" element={<h1>404 - Page Not Found</h1>} />
+        </Routes>
+      </AuthProvider>
+    </Router>
+  );
+}
+
+export default App;

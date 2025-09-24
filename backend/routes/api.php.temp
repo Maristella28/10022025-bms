@@ -1,0 +1,9 @@
+// Staff management routes
+Route::prefix('admin/staff')->middleware('auth:sanctum')->group(function () {
+    Route::get('/', [StaffController::class, 'index']);
+    Route::post('/', [StaffController::class, 'store']);
+    Route::get('/{staff}', [StaffController::class, 'show']);
+    Route::put('/{staff}', [StaffController::class, 'update']);
+    Route::post('/{staff}/deactivate', [StaffController::class, 'deactivate']);
+    Route::post('/{staff}/reactivate', [StaffController::class, 'reactivate']);
+});

@@ -1,0 +1,25 @@
+.react-time-picker {
+  width: 100% !important;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+}
+
+.react-time-picker__wrapper {
+  border: none;
+  box-shadow: none;
+}
+
+.react-time-picker__inputGroup__input {
+  min-width: 2.5rem;
+  border: none;
+  background: transparent;
+  font-size: 1rem;
+}
+
+.react-time-picker__clear-button,
+.react-time-picker__clock-button {
+  display: none;
+}

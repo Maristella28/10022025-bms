@@ -1,0 +1,59 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Resident;
+use App\Models\Profile;
+use App\Services\ActivityLogService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
+
+class ResidentController extends Controller
+{
+    // [Previous methods remain the same...]
+
+    /**
+     * Soft delete a resident
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function destroy($id)
+    {
+        try {
+            $resident = Resident::findOrFail($id);
+            
+            // Log the deletion
+            ActivityLogService::logDeleted($resident, request());
+            
+            // Perform soft delete
+            $resident->delete();
+            
+            // If resident has an associated profile, soft delete that too
+            if ($resident->profile) {
+                $resident->profile->delete();
+            }
+
+            return response()->json([
+                'message' => 'Resident has been moved to Recently Deleted.',
+                'resident' => $resident
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to delete resident', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to delete resident.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // [Previous methods remain here...]
+}
