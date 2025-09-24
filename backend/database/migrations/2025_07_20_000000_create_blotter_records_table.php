@@ -10,6 +10,7 @@ return new class extends Migration
     {
         Schema::create('blotter_records', function (Blueprint $table) {
             $table->id();
+            $table->string('case_number')->unique();
             $table->unsignedBigInteger('resident_id');
             $table->string('complainant_name');
             $table->string('respondent_name');

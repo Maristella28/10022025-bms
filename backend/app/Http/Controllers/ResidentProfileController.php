@@ -648,6 +648,22 @@ class ResidentProfileController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+            
+            // Handle specific database constraint violations
+            if (strpos($e->getMessage(), 'Integrity constraint violation') !== false) {
+                if (strpos($e->getMessage(), 'user_id') !== false) {
+                    return response()->json([
+                        'message' => 'This user already has a resident profile',
+                        'error' => 'User already has a profile. Please update the existing profile instead of creating a new one.'
+                    ], 409); // Conflict status code
+                } elseif (strpos($e->getMessage(), 'resident_id') !== false) {
+                    return response()->json([
+                        'message' => 'Resident ID already exists',
+                        'error' => 'The generated resident ID already exists. Please try again.'
+                    ], 409);
+                }
+            }
+            
             return response()->json([
                 'message' => 'Failed to create profile',
                 'error' => $e->getMessage()
@@ -1232,7 +1248,7 @@ class ResidentProfileController extends Controller
                 // Set safe defaults for any required fields that might still be NOT NULL
                 $profile->first_name = 'Pending';
                 $profile->last_name = 'Verification';
-                $profile->birth_date = now()->subYears(18)->format('Y-m-d');
+                $profile->birth_date = now()->subYears(18);
                 $profile->birth_place = 'Not specified';
                 $profile->age = 18;
                 $profile->sex = 'Not specified';

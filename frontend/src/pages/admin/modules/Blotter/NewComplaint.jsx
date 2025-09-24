@@ -44,6 +44,8 @@
         setResidentLoading(true);
         axios.get('/admin/residents')
             .then(res => {
+                console.log('Residents API response:', res.data);
+                console.log('First resident:', res.data.residents?.[0]);
                 setResidents(res.data.residents || []);
             })
             .catch(() => setResidents([]))
@@ -52,13 +54,16 @@
 
     const handleResidentSelect = (e) => {
         const residentId = e.target.value;
+        console.log('Selected residentId from dropdown:', residentId, 'type:', typeof residentId);
         setForm(f => ({ ...f, resident_id: residentId }));
         if (!residentId) return;
         const selected = residents.find(r => String(r.id) === String(residentId));
+        console.log('Found selected resident:', selected);
         if (selected) {
+            console.log('Setting form with resident_id:', residentId);
             setForm(f => ({
                 ...f,
-                resident_id: selected.resident_id, // Use the resident_id field
+                resident_id: residentId, // Use the database primary key from the select dropdown
                 complainant_name: `${selected.first_name} ${selected.middle_name ? selected.middle_name + ' ' : ''}${selected.last_name}${selected.name_suffix && selected.name_suffix.toLowerCase() !== 'none' ? ' ' + selected.name_suffix : ''}`.trim(),
                 contact_number: selected.mobile_number || selected.contact_number || '', // Check both fields
                 email: selected.email || '',
@@ -95,16 +100,42 @@
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!validate()) return;
-        // Prepare form data for file upload
-        const formData = new FormData();
-        Object.entries(form).forEach(([key, value]) => {
-        if (value) formData.append(key, value);
-        });
-        await axios.post('/blotter-records', formData);
-        alert('Blotter complaint submitted successfully!');
-        setForm(initialForm);
-        setErrors({});
-        navigate('/admin/blotterRecords');
+        
+        try {
+            // Prepare form data for file upload
+            const formData = new FormData();
+            Object.entries(form).forEach(([key, value]) => {
+                if (value) formData.append(key, value);
+            });
+            
+            console.log('Submitting blotter complaint with data:', Object.fromEntries(formData));
+            
+            const response = await axios.post('/blotter-records', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                }
+            });
+            
+            console.log('Blotter complaint submitted successfully:', response.data);
+            alert('Blotter complaint submitted successfully!');
+            setForm(initialForm);
+            setErrors({});
+            navigate('/admin/blotterRecords');
+        } catch (error) {
+            console.error('Error submitting blotter complaint:', error);
+            
+            if (error.response && error.response.data) {
+                if (error.response.data.errors) {
+                    // Handle validation errors
+                    setErrors(error.response.data.errors);
+                    alert('Please fix the validation errors and try again.');
+                } else {
+                    alert(`Error: ${error.response.data.message || 'Failed to submit complaint'}`);
+                }
+            } else {
+                alert('Failed to submit blotter complaint. Please try again.');
+            }
+        }
     };
 
     const handleCancel = () => {
@@ -118,7 +149,7 @@
         const name = `${r.first_name} ${r.middle_name ? r.middle_name + ' ' : ''}${r.last_name}${r.name_suffix && r.name_suffix.toLowerCase() !== 'none' ? ' ' + r.name_suffix : ''}`.toLowerCase();
         return (
             name.includes(residentSearch.toLowerCase()) ||
-            String(r.residents_id).includes(residentSearch)
+            String(r.resident_id).includes(residentSearch)
         );
     });
 
@@ -160,7 +191,7 @@
                                     ) : (
                                         residents.map(r => (
                                             <option key={r.id} value={r.id}>
-                                                {r.id} - {r.first_name} {r.middle_name ? r.middle_name + ' ' : ''}{r.last_name}{r.name_suffix && r.name_suffix.toLowerCase() !== 'none' ? ' ' + r.name_suffix : ''}
+                                                {r.resident_id} - {r.first_name} {r.middle_name ? r.middle_name + ' ' : ''}{r.last_name}{r.name_suffix && r.name_suffix.toLowerCase() !== 'none' ? ' ' + r.name_suffix : ''}
                                             </option>
                                         ))
                                     )}
@@ -327,9 +358,8 @@
                                         name="contact_number"
                                         value={form.contact_number}
                                         onChange={handleChange}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-3 bg-gray-50 text-gray-700 focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all duration-300 shadow-sm ${errors.contact_number ? 'border-red-400' : ''}`}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all duration-300 shadow-sm ${errors.contact_number ? 'border-red-400' : ''}`}
                                         placeholder="Enter Contact Number"
-                                        disabled
                                     />
                                     {errors.contact_number && <p className="text-xs text-red-500 mt-1">{errors.contact_number}</p>}
                                 </div>

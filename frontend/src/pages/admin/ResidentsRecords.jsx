@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef, Suspense, lazy } from "react";
 import Navbar from "../../components/Navbar";
 import Sidebar from "../../components/Sidebar";
 import HeaderControls from "./components/HeaderControls";
@@ -39,24 +39,205 @@ import {
   ArrowPathIcon,
   TrashIcon,
   ArrowDownTrayIcon,
-  ChartBarIcon
+  ChartBarIcon,
+  ExclamationCircleIcon
 } from "@heroicons/react/24/solid";
 
-// Utility Components
-const Badge = ({ text, color, icon = null }) => (
-  <span className={`px-3 py-1.5 text-xs font-semibold rounded-full ${color} inline-flex items-center gap-1 shadow-sm transition-all duration-200 hover:shadow-md`}>
-    {icon && icon}
-    {text}
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    this.setState({
+      error: error,
+      errorInfo: errorInfo
+    });
+    console.error('ResidentsRecords Error Boundary caught an error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6">
+            <div className="flex items-center mb-4">
+              <ExclamationCircleIcon className="h-8 w-8 text-red-500 mr-3" />
+              <h2 className="text-lg font-semibold text-gray-900">Something went wrong</h2>
+            </div>
+            <p className="text-gray-600 mb-4">
+              An error occurred while loading the residents records. Please try refreshing the page.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Custom hooks for better state management
+const useApiCall = () => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const abortControllerRef = useRef(null);
+
+  const execute = useCallback(async (apiCall, options = {}) => {
+    // Cancel previous request if still pending
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    abortControllerRef.current = new AbortController();
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await apiCall(abortControllerRef.current.signal);
+      return result;
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        setError(err.message || 'An error occurred');
+        throw err;
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  return { execute, loading, error };
+};
+
+// Input validation utilities
+const validateInput = {
+  email: (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  },
+  phone: (phone) => {
+    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+    return phoneRegex.test(phone.replace(/[\s\-\(\)]/g, ''));
+  },
+  required: (value) => {
+    return value && value.toString().trim().length > 0;
+  },
+  minLength: (value, min) => {
+    return value && value.toString().length >= min;
+  },
+  maxLength: (value, max) => {
+    return !value || value.toString().length <= max;
+  }
+};
+
+// Data sanitization utilities
+const sanitizeData = {
+  string: (value) => {
+    if (typeof value !== 'string') return '';
+    return value.trim().replace(/[<>]/g, '');
+  },
+  number: (value) => {
+    const num = parseFloat(value);
+    return isNaN(num) ? 0 : num;
+  },
+  date: (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? null : date;
+  }
+};
+
+// Enhanced Utility Components with better accessibility
+const Badge = React.memo(({ text, color, icon = null, ariaLabel }) => (
+  <span 
+    className={`px-3 py-1.5 text-xs font-semibold rounded-full ${color} inline-flex items-center gap-1 shadow-sm transition-all duration-200 hover:shadow-md`}
+    role="status"
+    aria-label={ariaLabel || text}
+  >
+    {icon && <span aria-hidden="true">{icon}</span>}
+    <span>{text}</span>
   </span>
+));
+
+// Loading Spinner Component
+const LoadingSpinner = ({ size = 'md', className = '' }) => {
+  const sizeClasses = {
+    sm: 'w-4 h-4',
+    md: 'w-6 h-6',
+    lg: 'w-8 h-8',
+    xl: 'w-12 h-12'
+  };
+
+  return (
+    <div className={`animate-spin rounded-full border-2 border-gray-300 border-t-blue-600 ${sizeClasses[size]} ${className}`}>
+      <span className="sr-only">Loading...</span>
+    </div>
+  );
+};
+
+// Error Display Component
+const ErrorDisplay = ({ error, onRetry, className = '' }) => (
+  <div className={`bg-red-50 border border-red-200 rounded-md p-4 ${className}`}>
+    <div className="flex items-center">
+      <ExclamationCircleIcon className="h-5 w-5 text-red-400 mr-2" />
+      <div className="flex-1">
+        <h3 className="text-sm font-medium text-red-800">Error</h3>
+        <p className="text-sm text-red-700 mt-1">{error}</p>
+      </div>
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          className="ml-4 text-sm text-red-600 hover:text-red-800 underline"
+        >
+          Retry
+        </button>
+      )}
+    </div>
+  </div>
 );
 
-// Working export functions - CSV and PDF (print-to-PDF)
-function exportToCSV(data) {
+// Empty State Component
+const EmptyState = ({ title, description, action, icon: Icon }) => (
+  <div className="text-center py-12">
+    {Icon && <Icon className="mx-auto h-12 w-12 text-gray-400 mb-4" />}
+    <h3 className="text-lg font-medium text-gray-900 mb-2">{title}</h3>
+    <p className="text-gray-500 mb-4">{description}</p>
+    {action && action}
+  </div>
+);
+
+// Enhanced export functions with better error handling and validation
+function exportToCSV(data, filename = 'residents-export') {
   try {
     const items = Array.isArray(data) ? data : [];
     if (items.length === 0) {
       if (window.__showInfo) window.__showInfo('No data to export.', 'Export', 'info'); else alert('No data to export.');
       return;
+    }
+
+    // Validate data structure
+    if (!items.every(item => item && typeof item === 'object')) {
+      throw new Error('Invalid data format for export');
     }
 
     const toName = (r) => {
@@ -238,15 +419,15 @@ const AvatarImg = ({ avatarPath }) => {
 };
 // Main component wrapper
 const ResidentsRecords = () => {
-  console.log('ResidentsRecords component mounting');
-
-
-  // Core state for residents
+  // Enhanced state management with better error handling
   const [residents, setResidents] = useState([]);
-  const [filteredResidents, setFilteredResidents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  
+  // Use custom hook for API calls
+  const { execute: executeApiCall, loading: apiLoading, error: apiError } = useApiCall();
 
   // Analytics and reporting state
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -288,10 +469,10 @@ const ResidentsRecords = () => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
-  const showInfo = (message, title = 'Notice', type = 'info') => {
+  const showInfo = useCallback((message, title = 'Notice', type = 'info') => {
     setInfoModal({ title, message: typeof message === 'string' ? message : JSON.stringify(message), type });
     setShowInfoModal(true);
-  };
+  }, []);
 
   const closeInfo = () => setShowInfoModal(false);
 
@@ -311,23 +492,42 @@ const ResidentsRecords = () => {
     return () => { delete window.__showInfo; };
   }, []);
   
-  // Verification handling
+  // Enhanced verification handling with better error handling and validation
   const handleVerification = async (residentId, status) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/residents/${residentId}/verify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ 
-          status,
-          comment: comment || undefined
-        })
+      // Validate inputs
+      if (!residentId || !status) {
+        throw new Error('Invalid resident ID or status');
+      }
+      
+      if (!['approved', 'denied', 'pending'].includes(status)) {
+        throw new Error('Invalid verification status');
+      }
+
+      // Validate comment for denied status
+      if (status === 'denied' && (!comment || comment.trim().length < 5)) {
+        toast.error('Please provide a reason for denial (minimum 5 characters)');
+        return;
+      }
+
+      const response = await executeApiCall(async (signal) => {
+        return await fetch(`http://localhost:8000/api/residents/${residentId}/verify`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({ 
+            status,
+            comment: comment ? sanitizeData.string(comment) : undefined
+          }),
+          signal
+        });
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update verification status');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}: Failed to update verification status`);
       }
 
       const result = await response.json();
@@ -353,7 +553,9 @@ const ResidentsRecords = () => {
       
     } catch (error) {
       console.error('Error updating verification status:', error);
-      toast.error('Failed to update verification status');
+      const errorMessage = error.message || 'Failed to update verification status';
+      toast.error(errorMessage);
+      setError(errorMessage);
     }
   };
 
@@ -361,21 +563,42 @@ const ResidentsRecords = () => {
   const [selectedImage, setSelectedImage] = useState(null);
   const [showImageModal, setShowImageModal] = useState(false);
 
-  // Derived filtering for the main table
-  useEffect(() => {
-    let list = Array.isArray(residents) ? residents.slice() : [];
-    if (search && search.trim() !== '') {
-      const q = search.toLowerCase();
-      list = list.filter((r) => formatResidentName(r).toLowerCase().includes(q));
+  // Enhanced filtering with memoization for better performance
+  const filteredResidents = useMemo(() => {
+    if (!Array.isArray(residents) || residents.length === 0) {
+      return [];
     }
+
+    let list = residents.slice();
+    
+    // Search filter with debouncing effect
+    if (search && search.trim() !== '') {
+      const searchTerm = sanitizeData.string(search).toLowerCase();
+      list = list.filter((r) => {
+        if (!r) return false;
+        const fullName = formatResidentName(r).toLowerCase();
+        const email = (r.email || '').toLowerCase();
+        const residentId = (r.resident_id || r.id || '').toLowerCase();
+        
+        return fullName.includes(searchTerm) || 
+               email.includes(searchTerm) || 
+               residentId.includes(searchTerm);
+      });
+    }
+    
+    // Status filter with validation
     if (statusFilter && statusFilter !== '') {
       if (statusFilter === 'for_review') {
-        list = list.filter((r) => !!r.for_review);
-      } else if (statusFilter === 'active' || statusFilter === 'outdated' || statusFilter === 'needs_verification') {
-        list = list.filter((r) => (r.update_status || getResidentStatus(r)).toLowerCase() === statusFilter);
+        list = list.filter((r) => Boolean(r.for_review));
+      } else if (['active', 'outdated', 'needs_verification'].includes(statusFilter)) {
+        list = list.filter((r) => {
+          const status = (r.update_status || getResidentStatus(r)).toLowerCase();
+          return status === statusFilter;
+        });
       }
     }
-    setFilteredResidents(list);
+    
+    return list;
   }, [residents, search, statusFilter]);
 
 
@@ -497,11 +720,6 @@ const ResidentsRecords = () => {
   }), [residents]);
   
 
-  // Update filtered residents when search, residents, or statusFilter changes
-  useEffect(() => {
-    fetchResidents();
-  }, []);
-
   // Update chart data when residents, year, or month changes
   useEffect(() => {
     if (residents.length > 0) {
@@ -558,9 +776,51 @@ const ResidentsRecords = () => {
     },
   };
 
+  const fetchResidents = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const res = await executeApiCall(async (signal) => {
+        return await axiosInstance.get("/admin/residents-list", { signal });
+      });
+      
+      const fetched = Array.isArray(res.data.residents) ? res.data.residents : [];
+      
+      // Validate and sanitize data
+      const validatedResidents = fetched.filter(resident => 
+        resident && 
+        typeof resident === 'object' && 
+        (resident.id || resident.resident_id)
+      );
+      
+      // Attach computed update_status to each resident for consistent UI
+      const withStatus = validatedResidents.map((r) => ({ 
+        ...r, 
+        update_status: getResidentStatus(r),
+        // Sanitize string fields
+        first_name: sanitizeData.string(r.first_name),
+        last_name: sanitizeData.string(r.last_name),
+        middle_name: sanitizeData.string(r.middle_name),
+        email: sanitizeData.string(r.email)
+      }));
+      
+      setResidents(withStatus);
+      setChartData(generateChartData(withStatus, selectedAnalyticsYear, selectedAnalyticsMonth));
+      
+    } catch (err) {
+      console.error("Error loading residents:", err);
+      setError(err.message || 'Failed to load residents data');
+      toast.error('Failed to load residents data');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedAnalyticsYear, selectedAnalyticsMonth, executeApiCall]);
+
+  // Initial data fetch
   useEffect(() => {
     fetchResidents();
-  }, []);
+  }, [fetchResidents]);
   
   function renderAnalytics() {
     // Helper to get most common value for a field
@@ -752,20 +1012,6 @@ const ResidentsRecords = () => {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [showImageModal]);
 
-  const fetchResidents = async () => {
-    try {
-      const res = await axiosInstance.get("/admin/residents-list");
-      const fetched = Array.isArray(res.data.residents) ? res.data.residents : [];
-      // Attach computed update_status to each resident for consistent UI
-      const withStatus = fetched.map((r) => ({ ...r, update_status: getResidentStatus(r) }));
-      setResidents(withStatus);
-      setChartData(generateChartData(withStatus, selectedAnalyticsYear, selectedAnalyticsMonth));
-    } catch (err) {
-      console.error("Error loading residents:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const fetchResidentsUsers = async () => {
     try {
@@ -996,6 +1242,15 @@ const ResidentsRecords = () => {
       // Enhanced error display for validation errors
       const errorMsg = err.response?.data?.message || err.message;
       let errorDetails = "No error details provided.";
+      
+      // Handle integrity constraint violation specifically
+      if (err.response?.status === 409 || (err.response?.data?.error && err.response.data.error.includes('Integrity constraint violation'))) {
+        if (err.response.data.error.includes('user_id') || err.response.data.message?.includes('already has a resident profile')) {
+          showInfo("❌ This user already has a resident profile. Please select a different user or update the existing profile.", 'Profile Already Exists', 'error');
+          return;
+        }
+      }
+      
       if (err.response?.data?.errors) {
         errorDetails = Object.entries(err.response.data.errors)
           .map(([field, msgs]) => `${field}: ${msgs.join(', ')}`)
@@ -1003,8 +1258,8 @@ const ResidentsRecords = () => {
       } else if (err.response?.data?.error) {
         errorDetails = err.response.data.error;
       }
-  console.error("❌ Save failed:", err.response?.data || err);
-  showInfo(`❌ Failed to save resident.\n${errorMsg}\nDetails:\n${errorDetails}`, 'Save Error', 'error');
+      console.error("❌ Save failed:", err.response?.data || err);
+      showInfo(`❌ Failed to save resident.\n${errorMsg}\nDetails:\n${errorDetails}`, 'Save Error', 'error');
     }
   };
 
@@ -1431,10 +1686,29 @@ const ResidentsRecords = () => {
 
   // (status is attached on fetch as `update_status`; we compute locally as fallback)
 
+  // Enhanced error handling in render
+  if (error && !loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="flex">
+          <Sidebar />
+          <div className="flex-1 p-6">
+            <ErrorDisplay 
+              error={error} 
+              onRetry={fetchResidents}
+              className="mt-8"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // UI controls for filter and sort
   const renderUIControls = () => {
     return (
-  <>
+  <ErrorBoundary>
       <Navbar />
       <Sidebar />
       <main className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen ml-64 pt-36 px-6 pb-16 font-sans transition-all duration-300">
@@ -1479,7 +1753,9 @@ const ResidentsRecords = () => {
                     <UserGroupIcon className="w-6 h-6 text-white" />
                   </div>
                   <div className="text-left">
-                    <div className="text-3xl font-black text-slate-900 group-hover:text-indigo-700 transition-colors duration-300">{residents.length}</div>
+                    <div className="text-3xl font-black text-slate-900 group-hover:text-indigo-700 transition-colors duration-300">
+                      {loading ? <LoadingSpinner size="sm" /> : residents.length}
+                    </div>
                     <div className="text-sm text-slate-600 font-semibold">Total Residents</div>
                   </div>
                 </div>
@@ -2148,8 +2424,8 @@ const ResidentsRecords = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {reportData.map((resident) => (
-                      <tr key={resident.id} className="hover:bg-blue-50 transition-colors">
+                    {                    reportData.map((resident, index) => (
+                      <tr key={`report-${resident.id}-${index}`} className="hover:bg-blue-50 transition-colors">
                         <td className="px-6 py-4 font-mono text-blue-600">{resident.resident_id}</td>
                         <td className="px-6 py-4 font-medium text-gray-900">{formatResidentName(resident)}</td>
                         <td className="px-6 py-4">
@@ -2256,8 +2532,8 @@ const ResidentsRecords = () => {
                           </td>
                         </tr>
                       ) : (
-                        residentsUsers.map((user) => (
-                          <tr key={user.id} className="hover:bg-blue-50 transition-all duration-200 border-b border-gray-100 hover:border-blue-200">
+                        residentsUsers.map((user, index) => (
+                          <tr key={`user-${user.id}-${index}`} className="hover:bg-blue-50 transition-all duration-200 border-b border-gray-100 hover:border-blue-200">
                             <td className="px-6 py-4">
                               <div className="font-semibold text-gray-900">{user.name}</div>
                             </td>
@@ -2447,8 +2723,8 @@ const ResidentsRecords = () => {
                           </td>
                         </tr>
                       ) : (
-                        recentlyDeletedResidents.map((r) => (
-                          <tr key={r.id} className="hover:bg-red-50 transition-all duration-200 border-b border-gray-100 hover:border-red-200">
+                        recentlyDeletedResidents.map((r, index) => (
+                          <tr key={`deleted-${r.id}-${index}`} className="hover:bg-red-50 transition-all duration-200 border-b border-gray-100 hover:border-red-200">
                             <td className="px-6 py-4"><AvatarImg avatarPath={r.avatar} /></td>
                             <td className="px-4 py-4">
                               <span className="font-mono text-red-600 bg-red-50 px-2 py-1 rounded text-xs">
@@ -2541,9 +2817,9 @@ const ResidentsRecords = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredResidents.map((r) => (
+                    filteredResidents.map((r, index) => (
 
-                      <React.Fragment key={r.id}>
+                      <React.Fragment key={`resident-${r.id}-${index}`}>
                         <tr className="hover:bg-green-50 transition-all duration-200 group border-b border-gray-100 hover:border-green-200">
                           <td className="px-6 py-4"><AvatarImg avatarPath={r.avatar} /></td>
                           <td className="px-4 py-4">
@@ -3270,9 +3546,9 @@ const ResidentsRecords = () => {
            </div>
          )}
       </main>
-    </>
+    </ErrorBoundary>
   );
-  };
+};
 
   return renderUIControls();
 };

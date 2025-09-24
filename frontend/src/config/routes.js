@@ -22,7 +22,9 @@ export const routeConfig = {
     { path: "assets-management", element: null, module: "inventoryAssets" },
     { path: "officials-management", element: null, module: "barangayOfficials" },
     { path: "staff-management", element: null, module: "staffManagement" },
-    { path: "create-household", element: null, module: "householdRecords" }
+    { path: "create-household", element: null, module: "householdRecords" },
+    { path: "modules/Blotter/NewComplaint", element: null, module: "blotterRecords" },
+    { path: "modules/Blotter/BlotterRequest", element: null, module: "blotterRecords" }
   ],
   
   // Resident-specific routes (always accessible to residents)

@@ -136,6 +136,20 @@ const BlotterRecords = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
 
+  // Custom navigation function with error handling
+  const handleNavigation = (path) => {
+    console.log('Attempting to navigate to:', path);
+    console.log('Current location:', window.location.pathname);
+    try {
+      navigate(path);
+    } catch (error) {
+      console.error('Navigation failed:', error);
+      // Fallback: try window.location as last resort
+      console.log('Using fallback navigation with window.location');
+      window.location.href = path;
+    }
+  };
+
   // Analytics state
   const [chartData, setChartData] = useState([]);
   const [pieChartData, setPieChartData] = useState([]);
@@ -552,14 +566,14 @@ const BlotterRecords = () => {
                   Schedule Appointments
                 </button>
                 <button
-                  onClick={() => navigate('/admin/modules/Blotter/NewComplaint')}
+                  onClick={() => handleNavigation('/admin/modules/Blotter/NewComplaint')}
                   className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white px-8 py-3 rounded-xl shadow-lg flex items-center gap-3 text-sm font-semibold transition-all duration-300 transform hover:scale-105"
                 >
                   <PlusIcon className="w-5 h-5" />
                   New Complaint
                 </button>
                 <button
-                  onClick={() => navigate('/admin/modules/Blotter/BlotterRequest')}
+                  onClick={() => handleNavigation('/admin/modules/Blotter/BlotterRequest')}
                   className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white px-8 py-3 rounded-xl shadow-lg flex items-center gap-3 text-sm font-semibold transition-all duration-300 transform hover:scale-105"
                 >
                   <ShieldExclamationIcon className="w-5 h-5" />

@@ -61,6 +61,7 @@ const ProtectedRoute = ({ children }) => {
   const pathParts = location.pathname.split('/').filter(Boolean); // Remove empty strings
   const currentPath = pathParts[0]; // First part (role)
   const modulePath = pathParts[1]; // Second part (module)
+  const fullPath = location.pathname; // Full path for special handling
   
   // Use the same profile completion check as Sidebares for consistency
   const [profileComplete, setProfileComplete] = useState(false);
@@ -164,6 +165,19 @@ const ProtectedRoute = ({ children }) => {
     if (currentPath !== userRole && user.role !== 'admin') {
       console.log('Unauthorized role access');
       return <Navigate to={`/${userRole}/dashboard`} replace />;
+    }
+  }
+
+  // Special handling for admin module routes (like /admin/modules/Blotter/NewComplaint)
+  if (fullPath && fullPath.startsWith('/admin/modules/')) {
+    console.log('Admin module route detected:', fullPath);
+    // Admin and staff have access to all module routes
+    if (user.role === 'admin' || user.role === 'staff') {
+      console.log('Granting access to admin module route for', user.role);
+      return children;
+    } else {
+      console.log('Non-admin/staff user trying to access admin module route');
+      return <Navigate to={`/${user.role}/dashboard`} replace />;
     }
   }
 
