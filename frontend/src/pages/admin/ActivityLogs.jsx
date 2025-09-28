@@ -33,6 +33,7 @@ const ActivityLogs = () => {
     search: '',
     date_from: '',
     date_to: '',
+    user_type: 'all', // New filter for user type
     page: 1,
     per_page: 20,
   });
@@ -48,6 +49,7 @@ const ActivityLogs = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [securityAlerts, setSecurityAlerts] = useState([]);
   const [auditSummary, setAuditSummary] = useState(null);
+  const [activeTab, setActiveTab] = useState('all'); // New state for tab navigation
 
   useEffect(() => {
     fetchLogs();
@@ -55,7 +57,7 @@ const ActivityLogs = () => {
     fetchStatistics();
     fetchSecurityAlerts();
     fetchAuditSummary();
-  }, [filters.page, filters.per_page]);
+  }, [filters.page, filters.per_page, filters.user_type, filters.action, filters.model_type, filters.search, filters.date_from, filters.date_to]);
 
   const fetchLogs = async () => {
     try {
@@ -63,12 +65,14 @@ const ActivityLogs = () => {
       const params = new URLSearchParams();
 
       Object.entries(filters).forEach(([key, value]) => {
-        if (value && value !== '') {
+        if (value && value !== '' && value !== 'all') {
           params.append(key, value);
         }
       });
 
+      console.log('Fetching logs with params:', params.toString());
       const response = await axios.get(`/admin/activity-logs?${params}`);
+      console.log('Logs response:', response.data);
       setLogs(response.data.logs.data);
       setTotalPages(response.data.logs.last_page);
       setError(null);
@@ -116,16 +120,24 @@ const ActivityLogs = () => {
     }
   };
 
+
   const handleFilterChange = (field, value) => {
     setFilters(prev => ({
       ...prev,
       [field]: value,
-      page: 1, // Reset to first page when filtering
+      page: field === 'page' ? value : 1, // Only reset to page 1 if not changing page
     }));
   };
 
   const handleSearch = () => {
     setFilters(prev => ({ ...prev, page: 1 }));
+    fetchLogs();
+  };
+
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setFilters(prev => ({ ...prev, user_type: tab, page: 1 }));
     fetchLogs();
   };
 
@@ -190,18 +202,84 @@ const ActivityLogs = () => {
 
   return (
     <div className="bg-gradient-to-br from-green-50 to-white min-h-screen ml-64 pt-36 px-6 pb-16 font-sans">
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+        }
+        @keyframes float-delayed {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-8px); }
+        }
+        @keyframes float-slow {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-6px); }
+        }
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        .animate-float-delayed { animation: float-delayed 3s ease-in-out infinite 0.5s; }
+        .animate-float-slow { animation: float-slow 4s ease-in-out infinite 1s; }
+        .animate-shimmer { animation: shimmer 2s ease-in-out infinite; }
+        .animate-fade-in { animation: fadeIn 0.8s ease-out; }
+        .animate-fade-in-up { animation: fadeInUp 0.8s ease-out; }
+        .animate-slide-in-up { animation: slideInUp 0.8s ease-out; }
+        .animation-delay-500 { animation-delay: 0.5s; }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(30px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideInUp {
+          from { opacity: 0; transform: translateY(50px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
       <div className="w-full max-w-7xl mx-auto space-y-8">
         {/* Enhanced Header */}
-        <div className="text-center space-y-4 animate-fade-in">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full shadow-xl mb-4 transform transition-transform duration-300 hover:scale-110">
-            <ChartBarIcon className="w-10 h-10 text-white" />
+        <div className="text-center space-y-8 animate-fade-in relative">
+          {/* Floating background elements */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute top-10 left-10 w-20 h-20 bg-gradient-to-br from-green-400/20 to-emerald-400/20 rounded-full blur-xl animate-float"></div>
+            <div className="absolute top-20 right-20 w-16 h-16 bg-gradient-to-br from-blue-400/20 to-cyan-400/20 rounded-full blur-lg animate-float-delayed"></div>
+            <div className="absolute bottom-10 left-1/4 w-12 h-12 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-full blur-md animate-float-slow"></div>
           </div>
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent tracking-tight animate-slide-in">
-            Activity Logs
-          </h1>
-          <p className="text-gray-600 text-lg max-w-2xl mx-auto leading-relaxed animate-fade-in-up">
-            Comprehensive monitoring system for tracking all system activities and user interactions.
-          </p>
+
+          <div className="relative">
+            <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-green-500 via-emerald-500 to-green-600 rounded-3xl shadow-2xl mb-6 transform transition-all duration-700 hover:scale-110 hover:rotate-6 hover:shadow-3xl relative overflow-hidden group">
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent rounded-3xl group-hover:animate-spin"></div>
+              <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              <ChartBarIcon className="w-12 h-12 text-white relative z-10 drop-shadow-lg group-hover:scale-110 transition-transform duration-300" />
+            </div>
+            <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center shadow-lg animate-pulse">
+              <ClockIcon className="w-4 h-4 text-white" />
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <h1 className="text-7xl font-black bg-gradient-to-r from-green-600 via-emerald-600 to-green-700 bg-clip-text text-transparent tracking-tight animate-slide-in-up drop-shadow-lg">
+              Activity Logs
+            </h1>
+            <div className="flex justify-center">
+              <div className="w-32 h-1.5 bg-gradient-to-r from-green-500 via-emerald-500 to-green-600 rounded-full shadow-lg relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer"></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-4xl mx-auto space-y-6 animate-fade-in-up animation-delay-500">
+            <p className="text-slate-600 text-2xl leading-relaxed font-semibold">
+              Comprehensive monitoring system for tracking all system activities and user interactions
+            </p>
+            <p className="text-slate-500 text-lg leading-relaxed max-w-3xl mx-auto">
+              Monitor admin actions, resident activities, and staff operations with detailed audit trails and real-time analytics
+            </p>
+          </div>
         </div>
 
         {error && (
@@ -215,58 +293,117 @@ const ActivityLogs = () => {
             </div>
           </div>
         )}
+
         {/* Enhanced Statistics Cards */}
         {statistics && (
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <ChartBarIcon className="w-7 h-7 text-blue-600" />
-              Activity Statistics
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 transition-all duration-300 hover:shadow-2xl hover:scale-105">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <DocumentTextIcon className="w-6 h-6 text-white" />
+          <div className="mb-12">
+            <div className="text-center mb-8">
+              <h2 className="text-4xl font-black bg-gradient-to-r from-slate-800 to-slate-900 bg-clip-text text-transparent mb-4 flex items-center justify-center gap-3">
+                <ChartBarIcon className="w-8 h-8 text-blue-600" />
+                Activity Statistics
+              </h2>
+              <p className="text-slate-600 text-lg max-w-2xl mx-auto">
+                Real-time analytics and performance metrics for system activities
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+              <div className="group bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl border border-slate-200/50 p-8 transition-all duration-700 hover:shadow-3xl hover:scale-105 hover:-translate-y-3 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-indigo-500 to-blue-600 rounded-3xl flex items-center justify-center shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent rounded-3xl"></div>
+                      <DocumentTextIcon className="w-8 h-8 text-white relative z-10 drop-shadow-lg" />
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-blue-600 uppercase tracking-wider mb-1">Total</p>
+                      <p className="text-4xl font-black text-slate-900 group-hover:text-blue-700 transition-colors duration-500 drop-shadow-sm">
+                        {statistics.total_logs.toLocaleString()}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-gray-600 text-sm font-medium">Total Logs</p>
-                    <p className="text-3xl font-bold text-gray-900">{statistics.total_logs.toLocaleString()}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 transition-all duration-300 hover:shadow-2xl hover:scale-105">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <ShieldCheckIcon className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-gray-600 text-sm font-medium">Login Events</p>
-                    <p className="text-3xl font-bold text-gray-900">{statistics.login_count.toLocaleString()}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 transition-all duration-300 hover:shadow-2xl hover:scale-105">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <UserIcon className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-gray-600 text-sm font-medium">User Registrations</p>
-                    <p className="text-3xl font-bold text-gray-900">{statistics.user_registrations.toLocaleString()}</p>
+                  <h3 className="text-xl font-bold text-slate-700 group-hover:text-blue-600 transition-colors duration-500 mb-4">Activity Logs</h3>
+                  <div className="w-full bg-slate-200 rounded-full h-3 mt-4 overflow-hidden shadow-inner">
+                    <div className="bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 h-3 rounded-full transition-all duration-1500 group-hover:from-blue-600 group-hover:via-indigo-600 group-hover:to-blue-700 relative overflow-hidden" style={{ width: '100%' }}>
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 transition-all duration-300 hover:shadow-2xl hover:scale-105">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <ArrowPathIcon className="w-6 h-6 text-white" />
+              <div className="group bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl border border-slate-200/50 p-8 transition-all duration-700 hover:shadow-3xl hover:scale-105 hover:-translate-y-3 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-green-50/80 to-emerald-50/80 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="w-16 h-16 bg-gradient-to-br from-green-500 via-emerald-500 to-green-600 rounded-3xl flex items-center justify-center shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent rounded-3xl"></div>
+                      <ShieldCheckIcon className="w-8 h-8 text-white relative z-10 drop-shadow-lg" />
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-green-600 uppercase tracking-wider mb-1">Login</p>
+                      <p className="text-4xl font-black text-slate-900 group-hover:text-green-700 transition-colors duration-500 drop-shadow-sm">
+                        {statistics.login_count.toLocaleString()}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-gray-600 text-sm font-medium">Profile Updates</p>
-                    <p className="text-3xl font-bold text-gray-900">{statistics.resident_updates.toLocaleString()}</p>
+                  <h3 className="text-xl font-bold text-slate-700 group-hover:text-green-600 transition-colors duration-500 mb-4">Login Events</h3>
+                  <div className="w-full bg-slate-200 rounded-full h-3 mt-4 overflow-hidden shadow-inner">
+                    <div className="bg-gradient-to-r from-green-500 via-emerald-500 to-green-600 h-3 rounded-full transition-all duration-1500 group-hover:from-green-600 group-hover:via-emerald-600 group-hover:to-green-700 relative overflow-hidden" style={{ width: '85%' }}>
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="group bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl border border-slate-200/50 p-8 transition-all duration-700 hover:shadow-3xl hover:scale-105 hover:-translate-y-3 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-purple-50/80 to-pink-50/80 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="w-16 h-16 bg-gradient-to-br from-purple-500 via-pink-500 to-purple-600 rounded-3xl flex items-center justify-center shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent rounded-3xl"></div>
+                      <UserIcon className="w-8 h-8 text-white relative z-10 drop-shadow-lg" />
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-purple-600 uppercase tracking-wider mb-1">New</p>
+                      <p className="text-4xl font-black text-slate-900 group-hover:text-purple-700 transition-colors duration-500 drop-shadow-sm">
+                        {statistics.user_registrations.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-700 group-hover:text-purple-600 transition-colors duration-500 mb-4">Registrations</h3>
+                  <div className="w-full bg-slate-200 rounded-full h-3 mt-4 overflow-hidden shadow-inner">
+                    <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-purple-600 h-3 rounded-full transition-all duration-1500 group-hover:from-purple-600 group-hover:via-pink-600 group-hover:to-purple-700 relative overflow-hidden" style={{ width: '70%' }}>
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="group bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl border border-slate-200/50 p-8 transition-all duration-700 hover:shadow-3xl hover:scale-105 hover:-translate-y-3 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-orange-50/80 to-red-50/80 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="w-16 h-16 bg-gradient-to-br from-orange-500 via-red-500 to-orange-600 rounded-3xl flex items-center justify-center shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent rounded-3xl"></div>
+                      <ArrowPathIcon className="w-8 h-8 text-white relative z-10 drop-shadow-lg" />
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-orange-600 uppercase tracking-wider mb-1">Updates</p>
+                      <p className="text-4xl font-black text-slate-900 group-hover:text-orange-700 transition-colors duration-500 drop-shadow-sm">
+                        {statistics.resident_updates.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-700 group-hover:text-orange-600 transition-colors duration-500 mb-4">Profile Updates</h3>
+                  <div className="w-full bg-slate-200 rounded-full h-3 mt-4 overflow-hidden shadow-inner">
+                    <div className="bg-gradient-to-r from-orange-500 via-red-500 to-orange-600 h-3 rounded-full transition-all duration-1500 group-hover:from-orange-600 group-hover:via-red-600 group-hover:to-orange-700 relative overflow-hidden" style={{ width: '60%' }}>
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -563,51 +700,375 @@ const ActivityLogs = () => {
           )}
         </div>
 
-        {/* Enhanced Activity Logs Table */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-2xl">
-          <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4">
-            <h3 className="text-white font-semibold text-lg flex items-center gap-2">
-              <DocumentTextIcon className="w-5 h-5" />
-              Activity Logs
-            </h3>
+        {/* Enhanced Activity Logs Table with Tab Separators */}
+        <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-slate-200/60 overflow-hidden transition-all duration-700 hover:shadow-3xl relative">
+          <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-green-700 px-8 py-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-white font-bold text-2xl flex items-center gap-3">
+                <DocumentTextIcon className="w-7 h-7" />
+                Activity Logs
+              </h3>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-green-300 rounded-full animate-pulse"></div>
+                <span className="text-green-100 text-sm font-medium">Live</span>
+              </div>
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Tab Navigation */}
+          <div className="bg-gradient-to-r from-slate-50 via-gray-50 to-slate-50 border-b-2 border-slate-200 px-6 py-4">
+            <div className="flex space-x-1 bg-slate-100 rounded-xl p-1">
+              <button
+                onClick={() => handleTabChange('all')}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                  activeTab === 'all'
+                    ? 'bg-white text-slate-800 shadow-lg border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-800 hover:bg-white/50'
+                }`}
+              >
+                <ChartBarIcon className="w-4 h-4" />
+                All Activities
+                <span className="px-2 py-1 bg-slate-200 text-slate-700 text-xs rounded-full">
+                  {logs.length}
+                </span>
+              </button>
+              
+              <button
+                onClick={() => handleTabChange('admin')}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                  activeTab === 'admin'
+                    ? 'bg-white text-red-800 shadow-lg border border-red-200'
+                    : 'text-slate-600 hover:text-red-800 hover:bg-red-50'
+                }`}
+              >
+                <ShieldCheckIcon className="w-4 h-4" />
+                Admin
+                <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">
+                  {logs.filter(log => log.user?.user_type === 'admin' || log.user?.role === 'admin').length}
+                </span>
+              </button>
+              
+              <button
+                onClick={() => handleTabChange('resident')}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                  activeTab === 'resident'
+                    ? 'bg-white text-blue-800 shadow-lg border border-blue-200'
+                    : 'text-slate-600 hover:text-blue-800 hover:bg-blue-50'
+                }`}
+              >
+                <UserIcon className="w-4 h-4" />
+                Resident
+                <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                  {logs.filter(log => log.user?.user_type === 'resident' || log.user?.role === 'resident').length}
+                </span>
+              </button>
+              
+              <button
+                onClick={() => handleTabChange('staff')}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                  activeTab === 'staff'
+                    ? 'bg-white text-purple-800 shadow-lg border border-purple-200'
+                    : 'text-slate-600 hover:text-purple-800 hover:bg-purple-50'
+                }`}
+              >
+                <DocumentTextIcon className="w-4 h-4" />
+                Staff
+                <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                  {logs.filter(log => log.user?.user_type === 'staff' || log.user?.role === 'staff').length}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto shadow-2xl rounded-2xl">
+            {loading ? (
+              <div className="px-6 py-16 text-center">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin shadow-lg"></div>
+                  <p className="text-slate-600 font-semibold text-lg">Loading activity logs...</p>
+                  <p className="text-slate-400 text-sm">Please wait while we fetch the data</p>
+                </div>
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="px-6 py-16 text-center">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 bg-gradient-to-br from-slate-100 to-slate-200 rounded-full flex items-center justify-center shadow-lg">
+                    <DocumentTextIcon className="w-8 h-8 text-slate-400" />
+                  </div>
+                  <p className="text-slate-600 font-semibold text-lg">No activity logs found</p>
+                  <p className="text-slate-400 text-sm">Try adjusting your filters or select a different tab</p>
+                </div>
+              </div>
+            ) : (
+              <div className="min-h-[400px]">
+                {/* Tab Content */}
+                {activeTab === 'all' && (
+                  <div className="p-6">
+                    <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gradient-to-r from-slate-50 via-gray-50 to-slate-50 border-b-2 border-slate-200">
                 <tr>
-                  <th className="px-6 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Date & Time</th>
-                  <th className="px-6 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">User</th>
-                  <th className="px-6 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Action</th>
-                  <th className="px-6 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Model</th>
-                  <th className="px-6 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Description</th>
-                  <th className="px-6 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">IP Address</th>
-                  <th className="px-6 py-4 text-left font-semibold text-gray-700">Actions</th>
+                  <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Date & Time</th>
+                  <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">User</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">User Type</th>
+                  <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Action</th>
+                  <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Model</th>
+                  <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Description</th>
+                  <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">IP Address</th>
+                  <th className="px-6 py-5 text-left font-bold text-slate-700 text-sm uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {loading ? (
-                  <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center">
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
-                        <p className="text-gray-500 font-medium">Loading activity logs...</p>
+              <tbody className="divide-y divide-slate-200/50">
+                          {logs.length === 0 ? (
+                            <tr>
+                              <td colSpan="8" className="px-6 py-16 text-center">
+                                <div className="flex flex-col items-center gap-4">
+                                  <div className="w-16 h-16 bg-gradient-to-br from-slate-100 to-slate-200 rounded-full flex items-center justify-center shadow-lg">
+                                    <DocumentTextIcon className="w-8 h-8 text-slate-400" />
+                                  </div>
+                                  <p className="text-slate-600 font-semibold text-lg">No activity logs found</p>
+                                  <p className="text-slate-400 text-sm">Try adjusting your filters or check back later</p>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : (
+                            logs.map((log) => {
+                              const userType = log.user?.user_type || log.user?.role || 'system';
+                              const isAdmin = userType === 'admin';
+                              const isResident = userType === 'resident';
+                              const isStaff = userType === 'staff';
+                              
+                              return (
+                                <tr key={log.id} className={`hover:bg-gradient-to-r transition-all duration-300 border-b border-slate-200/50 hover:shadow-sm group ${
+                                  isAdmin ? 'hover:from-red-50/80 hover:to-pink-50/80 hover:border-red-300/50' :
+                                  isResident ? 'hover:from-blue-50/80 hover:to-cyan-50/80 hover:border-blue-300/50' :
+                                  isStaff ? 'hover:from-purple-50/80 hover:to-indigo-50/80 hover:border-purple-300/50' :
+                                  'hover:from-slate-50/80 hover:to-gray-50/80 hover:border-slate-300/50'
+                                }`}>
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2">
+                                      <ClockIcon className="w-4 h-4 text-gray-400" />
+                                      <span className="font-medium text-gray-900">{formatDate(log.created_at)}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2">
+                                      <UserIcon className="w-4 h-4 text-gray-400" />
+                                      <span className="font-medium text-gray-900">{log.user?.name || 'System'}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                      isAdmin ? 'bg-red-100 text-red-800' :
+                                      isResident ? 'bg-blue-100 text-blue-800' :
+                                      isStaff ? 'bg-purple-100 text-purple-800' :
+                                      'bg-gray-100 text-gray-800'
+                                    }`}>
+                                      {userType.charAt(0).toUpperCase() + userType.slice(1)}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                      log.action.includes('login') ? 'bg-green-100 text-green-800' :
+                                      log.action.includes('logout') ? 'bg-yellow-100 text-yellow-800' :
+                                      log.action.includes('delete') ? 'bg-red-100 text-red-800' :
+                                      log.action.includes('create') ? 'bg-blue-100 text-blue-800' :
+                                      log.action.includes('update') ? 'bg-purple-100 text-purple-800' :
+                                      'bg-gray-100 text-gray-800'
+                                    }`}>
+                                      {log.action}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2">
+                                      <ServerIcon className="w-4 h-4 text-gray-400" />
+                                      <span className="font-mono text-sm text-gray-700">
+                                        {log.model_type ? `${log.model_type.split('\\').pop()}#${log.model_id}` : 'N/A'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 max-w-xs">
+                                    <div className="truncate" title={log.description}>
+                                      {log.description}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2">
+                                      <GlobeAltIcon className="w-4 h-4 text-gray-400" />
+                                      <span className="font-mono text-sm text-gray-700">{log.ip_address || 'N/A'}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedLog(log);
+                                        setShowDetails(true);
+                                      }}
+                                      className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center gap-2 transition-all duration-300 transform hover:scale-105"
+                                    >
+                                      <EyeIcon className="w-4 h-4" />
+                                      View
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Individual Tab Content */}
+                {activeTab === 'admin' && (
+                  <div className="p-6">
+                    <div className="bg-gradient-to-r from-red-50 to-pink-50 px-6 py-4 rounded-t-xl border-b-2 border-red-200 mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-pink-600 rounded-lg flex items-center justify-center shadow-lg">
+                          <ShieldCheckIcon className="w-4 h-4 text-white" />
+                        </div>
+                        <h4 className="text-lg font-bold text-red-800">Administrative Activities</h4>
+                        <span className="px-3 py-1 bg-red-100 text-red-800 text-xs font-semibold rounded-full">
+                          {logs.filter(log => log.user?.user_type === 'admin' || log.user?.role === 'admin').length} logs
+                        </span>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gradient-to-r from-slate-50 via-gray-50 to-slate-50 border-b-2 border-slate-200">
+                          <tr>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Date & Time</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">User</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Action</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Model</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Description</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">IP Address</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 text-sm uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/50">
+                          {logs.filter(log => log.user?.user_type === 'admin' || log.user?.role === 'admin').length === 0 ? (
+                            <tr>
+                    <td colSpan="7" className="px-6 py-16 text-center">
+                      <div className="flex flex-col items-center gap-4">
+                                  <div className="w-16 h-16 bg-gradient-to-br from-red-100 to-pink-100 rounded-full flex items-center justify-center shadow-lg">
+                                    <ShieldCheckIcon className="w-8 h-8 text-red-400" />
+                                  </div>
+                                  <p className="text-slate-600 font-semibold text-lg">No admin activities found</p>
+                                  <p className="text-slate-400 text-sm">Try adjusting your filters or check back later</p>
                       </div>
                     </td>
                   </tr>
-                ) : logs.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center">
-                      <div className="flex flex-col items-center gap-3">
-                        <DocumentTextIcon className="w-12 h-12 text-gray-300" />
-                        <p className="text-gray-500 font-medium">No activity logs found</p>
-                        <p className="text-gray-400 text-sm">Try adjusting your filters</p>
+                          ) : (
+                            logs.filter(log => log.user?.user_type === 'admin' || log.user?.role === 'admin').map((log) => (
+                              <tr key={log.id} className="hover:bg-gradient-to-r hover:from-red-50/80 hover:to-pink-50/80 transition-all duration-300 border-b border-slate-200/50 hover:border-red-300/50 hover:shadow-sm group">
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <ClockIcon className="w-4 h-4 text-gray-400" />
+                                    <span className="font-medium text-gray-900">{formatDate(log.created_at)}</span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <UserIcon className="w-4 h-4 text-gray-400" />
+                                    <span className="font-medium text-gray-900">{log.user?.name || 'System'}</span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                    log.action.includes('login') ? 'bg-green-100 text-green-800' :
+                                    log.action.includes('logout') ? 'bg-yellow-100 text-yellow-800' :
+                                    log.action.includes('delete') ? 'bg-red-100 text-red-800' :
+                                    log.action.includes('create') ? 'bg-blue-100 text-blue-800' :
+                                    log.action.includes('update') ? 'bg-purple-100 text-purple-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {log.action}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <ServerIcon className="w-4 h-4 text-gray-400" />
+                                    <span className="font-mono text-sm text-gray-700">
+                                      {log.model_type ? `${log.model_type.split('\\').pop()}#${log.model_id}` : 'N/A'}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 max-w-xs">
+                                  <div className="truncate" title={log.description}>
+                                    {log.description}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <GlobeAltIcon className="w-4 h-4 text-gray-400" />
+                                    <span className="font-mono text-sm text-gray-700">{log.ip_address || 'N/A'}</span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <button
+                                    onClick={() => {
+                                      setSelectedLog(log);
+                                      setShowDetails(true);
+                                    }}
+                                    className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center gap-2 transition-all duration-300 transform hover:scale-105"
+                                  >
+                                    <EyeIcon className="w-4 h-4" />
+                                    View
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'resident' && (
+                  <div className="p-6">
+                    <div className="bg-gradient-to-r from-blue-50 to-cyan-50 px-6 py-4 rounded-t-xl border-b-2 border-blue-200 mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg flex items-center justify-center shadow-lg">
+                          <UserIcon className="w-4 h-4 text-white" />
+                        </div>
+                        <h4 className="text-lg font-bold text-blue-800">Resident Activities</h4>
+                        <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
+                          {logs.filter(log => log.user?.user_type === 'resident' || log.user?.role === 'resident').length} logs
+                        </span>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gradient-to-r from-slate-50 via-gray-50 to-slate-50 border-b-2 border-slate-200">
+                          <tr>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Date & Time</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">User</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Action</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Model</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Description</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">IP Address</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 text-sm uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/50">
+                          {logs.filter(log => log.user?.user_type === 'resident' || log.user?.role === 'resident').length === 0 ? (
+                            <tr>
+                    <td colSpan="7" className="px-6 py-16 text-center">
+                      <div className="flex flex-col items-center gap-4">
+                                  <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-full flex items-center justify-center shadow-lg">
+                                    <UserIcon className="w-8 h-8 text-blue-400" />
+                        </div>
+                                  <p className="text-slate-600 font-semibold text-lg">No resident activities found</p>
+                                  <p className="text-slate-400 text-sm">Try adjusting your filters or check back later</p>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  logs.map((log) => (
-                    <tr key={log.id} className="hover:bg-green-50 transition-all duration-200 border-b border-gray-100 hover:border-green-200">
+                            logs.filter(log => log.user?.user_type === 'resident' || log.user?.role === 'resident').map((log) => (
+                              <tr key={log.id} className="hover:bg-gradient-to-r hover:from-blue-50/80 hover:to-cyan-50/80 transition-all duration-300 border-b border-slate-200/50 hover:border-blue-300/50 hover:shadow-sm group">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <ClockIcon className="w-4 h-4 text-gray-400" />
@@ -668,21 +1129,144 @@ const ActivityLogs = () => {
                 )}
               </tbody>
             </table>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'staff' && (
+                  <div className="p-6">
+                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 px-6 py-4 rounded-t-xl border-b-2 border-purple-200 mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg">
+                          <DocumentTextIcon className="w-4 h-4 text-white" />
+                        </div>
+                        <h4 className="text-lg font-bold text-purple-800">Staff Activities</h4>
+                        <span className="px-3 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded-full">
+                          {logs.filter(log => log.user?.user_type === 'staff' || log.user?.role === 'staff').length} logs
+                        </span>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gradient-to-r from-slate-50 via-gray-50 to-slate-50 border-b-2 border-slate-200">
+                          <tr>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Date & Time</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">User</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Action</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Model</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Description</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">IP Address</th>
+                            <th className="px-6 py-5 text-left font-bold text-slate-700 text-sm uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/50">
+                          {logs.filter(log => log.user?.user_type === 'staff' || log.user?.role === 'staff').length === 0 ? (
+                            <tr>
+                              <td colSpan="7" className="px-6 py-16 text-center">
+                                <div className="flex flex-col items-center gap-4">
+                                  <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-full flex items-center justify-center shadow-lg">
+                                    <DocumentTextIcon className="w-8 h-8 text-purple-400" />
+                                  </div>
+                                  <p className="text-slate-600 font-semibold text-lg">No staff activities found</p>
+                                  <p className="text-slate-400 text-sm">Try adjusting your filters or check back later</p>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : (
+                            logs.filter(log => log.user?.user_type === 'staff' || log.user?.role === 'staff').map((log) => (
+                              <tr key={log.id} className="hover:bg-gradient-to-r hover:from-purple-50/80 hover:to-indigo-50/80 transition-all duration-300 border-b border-slate-200/50 hover:border-purple-300/50 hover:shadow-sm group">
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <ClockIcon className="w-4 h-4 text-gray-400" />
+                                    <span className="font-medium text-gray-900">{formatDate(log.created_at)}</span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <UserIcon className="w-4 h-4 text-gray-400" />
+                                    <span className="font-medium text-gray-900">{log.user?.name || 'System'}</span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                    log.action.includes('login') ? 'bg-green-100 text-green-800' :
+                                    log.action.includes('logout') ? 'bg-yellow-100 text-yellow-800' :
+                                    log.action.includes('delete') ? 'bg-red-100 text-red-800' :
+                                    log.action.includes('create') ? 'bg-blue-100 text-blue-800' :
+                                    log.action.includes('update') ? 'bg-purple-100 text-purple-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {log.action}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <ServerIcon className="w-4 h-4 text-gray-400" />
+                                    <span className="font-mono text-sm text-gray-700">
+                                      {log.model_type ? `${log.model_type.split('\\').pop()}#${log.model_id}` : 'N/A'}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 max-w-xs">
+                                  <div className="truncate" title={log.description}>
+                                    {log.description}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <GlobeAltIcon className="w-4 h-4 text-gray-400" />
+                                    <span className="font-mono text-sm text-gray-700">{log.ip_address || 'N/A'}</span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <button
+                                    onClick={() => {
+                                      setSelectedLog(log);
+                                      setShowDetails(true);
+                                    }}
+                                    className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center gap-2 transition-all duration-300 transform hover:scale-105"
+                                  >
+                                    <EyeIcon className="w-4 h-4" />
+                                    View
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         {/* Enhanced Pagination */}
         {totalPages > 1 && (
           <div className="flex justify-center mt-8">
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+              <div className="flex items-center justify-between gap-4">
+                {/* Page Info */}
+                <div className="text-sm text-gray-600">
+                  Page {filters.page} of {totalPages}
+                </div>
+                
+                {/* Pagination Controls */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleFilterChange('page', Math.max(1, filters.page - 1))}
                   disabled={filters.page <= 1}
-                  className="px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 flex items-center gap-2"
                 >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
                   Previous
                 </button>
 
+                  {/* Page Numbers */}
+                  <div className="flex items-center gap-1">
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   const pageNum = Math.max(1, Math.min(totalPages - 4, filters.page - 2)) + i;
                   if (pageNum > totalPages) return null;
@@ -700,14 +1284,19 @@ const ActivityLogs = () => {
                     </button>
                   );
                 })}
+                  </div>
 
                 <button
                   onClick={() => handleFilterChange('page', Math.min(totalPages, filters.page + 1))}
                   disabled={filters.page >= totalPages}
-                  className="px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 flex items-center gap-2"
                 >
                   Next
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
                 </button>
+                </div>
               </div>
             </div>
           </div>

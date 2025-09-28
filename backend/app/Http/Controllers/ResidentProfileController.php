@@ -89,6 +89,7 @@ class ResidentProfileController extends Controller
                     'profile_id' => $profile->id,
                     'verification_status' => $profile->verification_status,
                     'profile_completed' => $profile->profile_completed,
+                    'residency_verification_image' => $profile->residency_verification_image,
                 ]);
                 
                 $profileData = $profile->toArray();
@@ -133,6 +134,9 @@ class ResidentProfileController extends Controller
                 // ✅ Ensure civil status consistency
                 $profileData['civilStatus'] = $profileData['civil_status'] ?? '';
                 
+                // ✅ CRITICAL FIX: Ensure profile_completed is boolean, not NULL
+                $profileData['profile_completed'] = $profile->profile_completed ? true : false;
+                
                 // ✅ CRITICAL FIX: Check beneficiaries table for actual benefits status
                 $resident = \App\Models\Resident::where('user_id', $user->id)->first();
                 if ($resident) {
@@ -161,6 +165,13 @@ class ResidentProfileController extends Controller
                 $userWithProfile = $user->toArray();
                 $userWithProfile['profile'] = $profileData;
                 
+                \Log::info('Profile show: Returning profile data from profiles table', [
+                    'user_id' => $user->id,
+                    'profile_residency_image' => $profileData['residency_verification_image'] ?? 'NOT_SET',
+                    'profile_verification_status' => $profileData['verification_status'] ?? 'NOT_SET',
+                    'profile_keys' => array_keys($profileData)
+                ]);
+                
                 return response()->json([
                     'user' => $userWithProfile,
                     'profile' => $profileData,
@@ -175,6 +186,13 @@ class ResidentProfileController extends Controller
                 ->orderByRaw("CASE WHEN verification_status = 'approved' THEN 0 ELSE 1 END")
                 ->orderByDesc('updated_at')
                 ->first();
+                
+            \Log::info('Profile show: Checking resident fallback', [
+                'user_id' => $user->id,
+                'resident_found' => $resident ? true : false,
+                'resident_verification_status' => $resident ? $resident->verification_status : null,
+                'resident_residency_image' => $resident ? $resident->residency_verification_image : null
+            ]);
             
             if (!$resident) {
                 \Log::info('Profile show: No resident or profile found for user', [
@@ -205,6 +223,31 @@ class ResidentProfileController extends Controller
             // If there's a separate profile record, merge any additional data
             if ($resident->profile) {
                 $profileData = array_merge($profileData, $resident->profile->toArray());
+                \Log::info('Profile show: Merged profile data with resident data', [
+                    'user_id' => $user->id,
+                    'merged_residency_image' => $profileData['residency_verification_image'] ?? null,
+                    'merged_verification_status' => $profileData['verification_status'] ?? null
+                ]);
+            }
+            
+            // ✅ CRITICAL FIX: Ensure residency verification data is properly set
+            // Prioritize profile data over resident data for residency verification fields
+            if ($resident->profile) {
+                if ($resident->profile->residency_verification_image) {
+                    $profileData['residency_verification_image'] = $resident->profile->residency_verification_image;
+                }
+                if ($resident->profile->verification_status) {
+                    $profileData['verification_status'] = $resident->profile->verification_status;
+                }
+                if ($resident->profile->denial_reason) {
+                    $profileData['denial_reason'] = $resident->profile->denial_reason;
+                }
+                
+                \Log::info('Profile show: Prioritized profile data for residency verification', [
+                    'user_id' => $user->id,
+                    'final_residency_image' => $profileData['residency_verification_image'] ?? null,
+                    'final_verification_status' => $profileData['verification_status'] ?? null
+                ]);
             }
             
             // Ensure the resident ID is correctly set (not overwritten by profile ID)
@@ -247,6 +290,9 @@ class ResidentProfileController extends Controller
             // Ensure verification_status prefers resident-level status when available
             $profileData['verification_status'] = $resident->verification_status
                 ?? ($resident->profile ? $resident->profile->verification_status : ($profileData['verification_status'] ?? null));
+
+            // ✅ CRITICAL FIX: Ensure profile_completed is boolean, not NULL
+            $profileData['profile_completed'] = $resident->profile ? ($resident->profile->profile_completed ? true : false) : false;
 
             // Normalize permissions and flags so frontend has consistent shape
             if (!array_key_exists('permissions', $profileData)) {
@@ -302,6 +348,13 @@ class ResidentProfileController extends Controller
             // FIX: Ensure user object includes profile data for frontend compatibility
             $userWithProfile = $user->toArray();
             $userWithProfile['profile'] = $profileData;
+            
+            \Log::info('Profile show: Returning profile data from residents table fallback', [
+                'user_id' => $user->id,
+                'profile_residency_image' => $profileData['residency_verification_image'] ?? 'NOT_SET',
+                'profile_verification_status' => $profileData['verification_status'] ?? 'NOT_SET',
+                'profile_keys' => array_keys($profileData)
+            ]);
             
             return response()->json([
                 'user' => $userWithProfile,
@@ -588,6 +641,20 @@ class ResidentProfileController extends Controller
                 $profile->save();
             }
 
+            // Custom validation: Profile photo is required (either new upload or existing photo)
+            $hasNewPhoto = $request->hasFile('current_photo');
+            $hasExistingPhoto = $request->has('current_photo') && !empty(trim($request->input('current_photo')));
+            $hasProfilePhoto = !empty($profile->current_photo);
+            
+            if (!$hasNewPhoto && !$hasExistingPhoto && !$hasProfilePhoto) {
+                return response()->json([
+                    'message' => 'Profile photo is required',
+                    'errors' => [
+                        'current_photo' => ['Profile photo is required to complete your profile.']
+                    ]
+                ], 422);
+            }
+
             // Set profile_completed if all required fields are filled and verification_status is approved
             $requiredFields = ['first_name','last_name','birth_date','sex','civil_status','religion','current_address','years_in_barangay','voter_status','housing_type','classified_sector','educational_attainment','occupation_type','salary_income','current_photo'];
             $isComplete = true;
@@ -739,50 +806,64 @@ class ResidentProfileController extends Controller
                 'profile_id' => $profile->id
             ]);
 
-            // Flexible validation for updates - all fields nullable
+            // Enhanced validation for updates - enforce required fields based on requirements
             // Note: current_photo can be either a file upload OR a string (existing photo path)
             $validated = $request->validate([
-                'first_name' => 'nullable|string',
-                'last_name' => 'nullable|string',
-                'birth_date' => 'nullable|date',
-                'birth_place' => 'nullable|string',
-                'age' => 'nullable|integer',
-                'email' => 'nullable|email',
-                'contact_number' => 'nullable|string',
-                'mobile_number' => 'nullable|string', // Add mobile_number validation
-                'sex' => 'nullable|string',
-                'civil_status' => 'nullable|string',
-                'religion' => 'nullable|string',
-                'current_address' => 'nullable|string',
-                'years_in_barangay' => 'nullable|integer',
-                'voter_status' => 'nullable|string',
+                // Personal Information - Required fields (except middle_name and name_suffix)
+                'first_name' => 'required|string|max:255',
+                'last_name' => 'required|string|max:255',
+                'birth_date' => 'required|date|before:today',
+                'birth_place' => 'required|string|max:255',
+                'age' => 'nullable|integer|min:0|max:150',
+                'email' => 'required|email|max:255',
+                'contact_number' => 'nullable|string|max:20',
+                'mobile_number' => 'required|string|regex:/^09[0-9]{9}$/|max:11',
+                'sex' => 'required|string|in:Male,Female,Other',
+                'civil_status' => 'required|string|in:Single,Married,Widow,Separated',
+                'religion' => 'required|string|max:255',
+                'nationality' => 'required|string|max:255',
+                'relation_to_head' => 'required|string|max:255',
+                
+                // Address Information - Required fields (except housing_type)
+                'current_address' => 'required|string|max:500',
+                'years_in_barangay' => 'required|integer|min:0|max:100',
                 'head_of_family' => 'nullable|boolean',
-                // Allow current_photo to be either file upload or string (existing photo path)
-                'current_photo' => 'nullable', // Remove strict image validation here, handle separately
+                
+                // Education & Employment - Required fields (except business fields)
+                'classified_sector' => 'required|string|max:255',
+                'educational_attainment' => 'required|string|max:255',
+                'occupation_type' => 'required|string|max:255',
+                'salary_income' => 'required|string|max:255',
+                
+                // Voter Information - All fields required
+                'voter_status' => 'required|string|max:255',
+                'voters_id_number' => 'required|string|max:255',
+                'voting_location' => 'required|string|max:255',
+                
+                // Profile Photo - Required
+                'current_photo' => 'nullable', // Handle file upload separately
                 'residency_verification_image' => 'nullable|string',
 
-                // Optional
-                'middle_name' => 'nullable|string',
-                'name_suffix' => 'nullable|string',
-                'nationality' => 'nullable|string',
-                'relation_to_head' => 'nullable|string',
-                'voters_id_number' => 'nullable|string',
-                'voting_location' => 'nullable|string',
-                'housing_type' => 'nullable|string',
-                'household_no' => 'nullable|string',
-                'classified_sector' => 'nullable|string',
-                'educational_attainment' => 'nullable|string',
-                'occupation_type' => 'nullable|string',
-                'salary_income' => 'nullable|string',
-                'business_info' => 'nullable|string',
-                'business_type' => 'nullable|string',
-                'business_location' => 'nullable|string',
+                // Optional fields
+                'middle_name' => 'nullable|string|max:255',
+                'name_suffix' => 'nullable|string|in:none,Jr.,Sr.,II,III,IV',
+                'housing_type' => 'nullable|string|max:255',
+                
+                // Business Information - Optional fields
+                'business_info' => 'nullable|string|max:255',
+                'business_type' => 'nullable|string|max:255',
+                'business_location' => 'nullable|string|max:255',
                 'business_outside_barangay' => 'nullable|boolean',
+                
+                // Special Categories - Optional
                 'special_categories' => 'nullable|array',
-                'covid_vaccine_status' => 'nullable|string',
-                'vaccine_received' => 'nullable|array',
-                'other_vaccine' => 'nullable|string',
-                'year_vaccinated' => 'nullable|integer',
+                'special_categories.*' => 'string|max:255',
+                
+                // COVID Vaccination - Optional
+                'covid_vaccine_status' => 'nullable|string|max:255',
+                'other_vaccine' => 'nullable|string|max:255',
+                'year_vaccinated' => 'nullable|string|max:4',
+                'household_no' => 'nullable|string|max:50',
             ]);
             
             // Validate current_photo separately if it's a file upload
@@ -790,6 +871,29 @@ class ResidentProfileController extends Controller
                 $request->validate([
                     'current_photo' => 'image|mimes:jpeg,png,jpg,gif,svg|max:2048'
                 ]);
+            }
+            
+            // Custom validation: Profile photo is required (either new upload or existing photo)
+            $hasNewPhoto = $request->hasFile('current_photo');
+            $hasExistingPhoto = $request->has('current_photo') && !empty(trim($request->input('current_photo')));
+            $hasProfilePhoto = !empty($profile->current_photo);
+            
+            \Log::info('Profile photo validation debug', [
+                'hasNewPhoto' => $hasNewPhoto,
+                'hasExistingPhoto' => $hasExistingPhoto,
+                'hasProfilePhoto' => $hasProfilePhoto,
+                'current_photo_input' => $request->input('current_photo'),
+                'profile_current_photo' => $profile->current_photo,
+                'request_has_current_photo' => $request->has('current_photo')
+            ]);
+            
+            if (!$hasNewPhoto && !$hasExistingPhoto && !$hasProfilePhoto) {
+                return response()->json([
+                    'message' => 'Profile photo is required',
+                    'errors' => [
+                        'current_photo' => ['Profile photo is required to complete your profile.']
+                    ]
+                ], 422);
             }
 
             // Get all fillable data - for updates, only update provided fields safely
@@ -1012,6 +1116,14 @@ class ResidentProfileController extends Controller
     public function approveVerification($id)
     {
         try {
+            // Validate the ID parameter
+            if (!$id || !is_numeric($id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid resident ID provided.'
+                ], 400);
+            }
+            
             \DB::beginTransaction();
             
             // First try to find by profile ID
@@ -1022,12 +1134,18 @@ class ResidentProfileController extends Controller
                 // Update profile verification status
                 $profile->verification_status = 'approved';
                 $profile->denial_reason = null;
+                // Ensure profile_completed is set to false when approved (user needs to complete profile)
+                $profile->profile_completed = false;
                 $profile->save();
                 
-                // Find resident record
-                $resident = Resident::where('profile_id', $profile->id)
-                    ->orWhere('id', $id)
-                    ->first();
+                // Find resident record by user_id first, then by profile_id
+                $resident = Resident::where('user_id', $profile->user_id)->first();
+                if (!$resident) {
+                    $resident = Resident::where('profile_id', $profile->id)->first();
+                }
+                if (!$resident) {
+                    $resident = Resident::find($id);
+                }
                 
                 // If resident doesn't exist, create one
                 if (!$resident) {
@@ -1039,7 +1157,16 @@ class ResidentProfileController extends Controller
                 
                 // Update resident verification status
                 $resident->verification_status = 'approved';
+                $resident->denial_reason = null;
                 $resident->save();
+                
+                \Log::info('Approval: Updated both profile and resident', [
+                    'profile_id' => $profile->id,
+                    'resident_id' => $resident->id,
+                    'user_id' => $profile->user_id,
+                    'profile_status' => $profile->verification_status,
+                    'resident_status' => $resident->verification_status
+                ]);
                 
                 // Force refresh relations
                 $profile = $profile->fresh();
@@ -1063,34 +1190,53 @@ class ResidentProfileController extends Controller
             // If no profile found, try to find resident directly
             $resident = Resident::with('profile')->find($id);
             if ($resident) {
-                \DB::beginTransaction();
                 try {
                     // Update resident
                     $resident->verification_status = 'approved';
+                    $resident->denial_reason = null;
                     $resident->save();
                     
                     // Update or create profile
                     if ($resident->profile) {
                         $resident->profile->verification_status = 'approved';
                         $resident->profile->denial_reason = null;
+                        $resident->profile->profile_completed = false;
                         $resident->profile->save();
                     } else if ($resident->user_id) {
                         $profile = new Profile();
                         $profile->user_id = $resident->user_id;
                         $profile->verification_status = 'approved';
                         $profile->resident_id = $resident->resident_id;
+                        $profile->profile_completed = false;
                         $profile->save();
                         
                         $resident->profile_id = $profile->id;
                         $resident->save();
+                        
+                        // Refresh the resident to get the new profile relation
+                        $resident = $resident->fresh('profile');
                     }
+                    
+                    \Log::info('Approval: Updated resident and profile', [
+                        'resident_id' => $resident->id,
+                        'user_id' => $resident->user_id,
+                        'resident_status' => $resident->verification_status,
+                        'profile_status' => $resident->profile ? $resident->profile->verification_status : 'N/A'
+                    ]);
                     
                     // Force refresh the resident with profile relation
                     $resident = $resident->fresh('profile');
                     
                     // Notify the user
                     if ($resident->user) {
-                        $resident->user->notify(new ResidencyVerificationApproved($resident->user));
+                        try {
+                            $resident->user->notify(new ResidencyVerificationApproved($resident->user));
+                        } catch (\Exception $notificationError) {
+                            \Log::warning('Failed to send approval notification', [
+                                'user_id' => $resident->user_id,
+                                'error' => $notificationError->getMessage()
+                            ]);
+                        }
                     }
                     
                     \DB::commit();
@@ -1120,6 +1266,8 @@ class ResidentProfileController extends Controller
                 'resident_id' => $id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
             ]);
             return response()->json([
                 'success' => false,
@@ -1133,22 +1281,56 @@ class ResidentProfileController extends Controller
     public function denyVerification(Request $request, $id)
     {
         try {
+            \Log::info('Deny verification called', [
+                'id' => $id,
+                'request_data' => $request->all()
+            ]);
+            
             // Accept either resident id OR profile id for flexibility
             $resident = Resident::find($id);
             if (!$resident) {
                 $resident = Resident::where('profile_id', $id)->first();
             }
             
+            \Log::info('Resident lookup result', [
+                'id' => $id,
+                'resident_found' => $resident ? $resident->id : null,
+                'resident_profile_id' => $resident ? $resident->profile_id : null
+            ]);
+            
             if (!$resident) {
                 // Fallback: update Profile verification if Resident does not yet exist
                 $profile = Profile::find($id);
+                \Log::info('Profile fallback lookup', [
+                    'id' => $id,
+                    'profile_found' => $profile ? $profile->id : null,
+                    'profile_user_id' => $profile ? $profile->user_id : null
+                ]);
+                
                 if ($profile) {
                     $request->validate([
                         'comment' => 'required|string|max:500'
                     ]);
+                    // Store the old image path before clearing it
+                    $oldImagePath = $profile->residency_verification_image;
+                    
                     $profile->verification_status = 'denied';
                     $profile->denial_reason = $request->input('comment');
+                    $profile->residency_verification_image = null; // Clear the uploaded image
                     $profile->save();
+                    
+                    // Delete the physical image file from storage
+                    if ($oldImagePath) {
+                        try {
+                            \Storage::disk('public')->delete($oldImagePath);
+                            \Log::info('Deleted profile verification image (fallback)', ['path' => $oldImagePath]);
+                        } catch (\Exception $e) {
+                            \Log::warning('Failed to delete profile verification image (fallback)', [
+                                'path' => $oldImagePath,
+                                'error' => $e->getMessage()
+                            ]);
+                        }
+                    }
 
                     // Try to email profile user
                     $user = $profile->user;
@@ -1177,15 +1359,53 @@ class ResidentProfileController extends Controller
                 'comment' => 'required|string|max:500'
             ]);
             
-            // Update verification status
+            \Log::info('Processing resident denial', [
+                'resident_id' => $resident->id,
+                'current_image' => $resident->residency_verification_image,
+                'profile_image' => $resident->profile ? $resident->profile->residency_verification_image : null
+            ]);
+            
+            // Store the old image path before clearing it
+            $oldImagePath = $resident->residency_verification_image;
+            $oldProfileImagePath = $resident->profile ? $resident->profile->residency_verification_image : null;
+            
+            // Update verification status and clear the uploaded image
             $resident->verification_status = 'denied';
             $resident->denial_reason = $request->input('comment');
+            $resident->residency_verification_image = null; // Clear the uploaded image
             $resident->save();
+            
             // Keep profile in sync if it exists
             if ($resident->profile) {
                 $resident->profile->verification_status = 'denied';
                 $resident->profile->denial_reason = $request->input('comment');
+                $resident->profile->residency_verification_image = null; // Clear the uploaded image
                 $resident->profile->save();
+            }
+            
+            // Delete the physical image files from storage
+            if ($oldImagePath) {
+                try {
+                    \Storage::disk('public')->delete($oldImagePath);
+                    \Log::info('Deleted resident verification image', ['path' => $oldImagePath]);
+                } catch (\Exception $e) {
+                    \Log::warning('Failed to delete resident verification image', [
+                        'path' => $oldImagePath,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+            
+            if ($oldProfileImagePath && $oldProfileImagePath !== $oldImagePath) {
+                try {
+                    \Storage::disk('public')->delete($oldProfileImagePath);
+                    \Log::info('Deleted profile verification image', ['path' => $oldProfileImagePath]);
+                } catch (\Exception $e) {
+                    \Log::warning('Failed to delete profile verification image', [
+                        'path' => $oldProfileImagePath,
+                        'error' => $e->getMessage()
+                    ]);
+                }
             }
             
             // Send email notification to resident
@@ -1230,6 +1450,14 @@ class ResidentProfileController extends Controller
     {
         try {
             $user = $request->user();
+            
+            \Log::info('Residency verification upload attempt', [
+                'user_id' => $user->id,
+                'user_email' => $user->email,
+                'has_file' => $request->hasFile('residency_verification_image'),
+                'file_size' => $request->hasFile('residency_verification_image') ? $request->file('residency_verification_image')->getSize() : null
+            ]);
+            
             // Validate the image
             $request->validate([
                 'residency_verification_image' => 'required|image|mimes:jpeg,png,jpg|max:5120' // 5MB max
@@ -1248,7 +1476,7 @@ class ResidentProfileController extends Controller
                 // Set safe defaults for any required fields that might still be NOT NULL
                 $profile->first_name = 'Pending';
                 $profile->last_name = 'Verification';
-                $profile->birth_date = now()->subYears(18);
+                $profile->birth_date = \Carbon\Carbon::now()->subYears(18)->format('Y-m-d');
                 $profile->birth_place = 'Not specified';
                 $profile->age = 18;
                 $profile->sex = 'Not specified';
@@ -1261,6 +1489,9 @@ class ResidentProfileController extends Controller
                     'profile_id' => $profile->id
                 ]);
             }
+            // Initialize imagePath variable
+            $imagePath = null;
+            
             // Handle image upload
             if ($request->hasFile('residency_verification_image')) {
                 // Delete old image if exists
@@ -1268,27 +1499,101 @@ class ResidentProfileController extends Controller
                     \Storage::disk('public')->delete($profile->residency_verification_image);
                 }
                 // Store new image
-                $imagePath = $request->file('residency_verification_image')->store('residency_verification_images', 'public');
+                try {
+                    $imagePath = $request->file('residency_verification_image')->store('residency_verification_images', 'public');
+                    \Log::info('Image stored successfully', [
+                        'user_id' => $user->id,
+                        'image_path' => $imagePath
+                    ]);
+                } catch (\Exception $e) {
+                    \Log::error('Failed to store image', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage()
+                    ]);
+                    throw new \Exception('Failed to store image: ' . $e->getMessage());
+                }
+                
                 $profile->residency_verification_image = $imagePath;
                 $profile->verification_status = 'pending'; // Reset to pending for review
                 $profile->denial_reason = null; // Clear any previous denial reason
                 $profile->save();
+                
+                // ✅ CRITICAL FIX: Synchronize residency verification data to residents table
+                $resident = \App\Models\Resident::where('user_id', $user->id)->first();
+                if ($resident) {
+                    $resident->residency_verification_image = $imagePath;
+                    $resident->verification_status = 'pending';
+                    $resident->denial_reason = null;
+                    $resident->save();
+                    
+                    \Log::info('Synchronized residency verification data to residents table', [
+                        'user_id' => $user->id,
+                        'resident_id' => $resident->id,
+                        'profile_id' => $profile->id,
+                        'image_path' => $imagePath
+                    ]);
+                } else {
+                    // If no resident exists, create one to ensure data consistency
+                    $resident = new \App\Models\Resident();
+                    $resident->user_id = $user->id;
+                    $resident->profile_id = $profile->id;
+                    $resident->resident_id = $profile->resident_id;
+                    $resident->residency_verification_image = $imagePath;
+                    $resident->verification_status = 'pending';
+                    $resident->denial_reason = null;
+                    
+                    // Set required fields from profile data
+                    $resident->first_name = $profile->first_name ?? 'Pending';
+                    $resident->last_name = $profile->last_name ?? 'Verification';
+                    $resident->birth_date = $profile->birth_date ? $profile->birth_date : \Carbon\Carbon::now()->subYears(18)->format('Y-m-d');
+                    $resident->birth_place = $profile->birth_place ?? 'Not specified';
+                    $resident->age = $profile->age ?? 18;
+                    $resident->sex = $profile->sex ?? 'Not specified';
+                    $resident->civil_status = $profile->civil_status ?? 'Not specified';
+                    $resident->religion = $profile->religion ?? 'Not specified';
+                    $resident->email = $profile->email ?? $user->email;
+                    
+                    $resident->save();
+                    
+                    \Log::info('Created new resident record for residency verification', [
+                        'user_id' => $user->id,
+                        'resident_id' => $resident->id,
+                        'profile_id' => $profile->id,
+                        'image_path' => $imagePath
+                    ]);
+                }
+                
                 \Log::info('Residency verification image uploaded successfully', [
                     'user_id' => $user->id,
                     'profile_id' => $profile->id,
                     'image_path' => $imagePath
                 ]);
-                // Notify all admins
-                $admins = \App\Models\User::where('role', 'admin')->get();
-                foreach ($admins as $admin) {
-                    $admin->notify(new \App\Notifications\ResidencyVerificationReuploaded($user));
+                
+                // Notify all admins (with error handling)
+                try {
+                    $admins = \App\Models\User::where('role', 'admin')->get();
+                    foreach ($admins as $admin) {
+                        $admin->notify(new \App\Notifications\ResidencyVerificationReuploaded($user));
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning('Failed to send admin notifications', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage()
+                    ]);
+                    // Don't fail the upload if notifications fail
                 }
+                
+                return response()->json([
+                    'message' => 'Residency verification image uploaded successfully. Please wait for admin approval.',
+                    'profile' => $profile->fresh(),
+                    'image_path' => $imagePath
+                ], 200);
+            } else {
+                return response()->json([
+                    'message' => 'No image file provided.',
+                    'error' => 'No image file was uploaded.'
+                ], 400);
             }
-            return response()->json([
-                'message' => 'Residency verification image uploaded successfully. Please wait for admin approval.',
-                'profile' => $profile->fresh(),
-                'image_path' => $imagePath ?? null
-            ], 200);
             
         } catch (\Exception $e) {
             \Log::error('Residency verification upload failed', [

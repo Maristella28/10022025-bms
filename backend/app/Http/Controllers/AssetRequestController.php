@@ -22,9 +22,9 @@ class AssetRequestController extends Controller
         $page = $request->get('page', 1);
         
         if ($user->role === 'admin') {
-            $query = AssetRequest::with(['items.asset', 'user', 'resident.profile']);
+            $query = AssetRequest::with(['items.asset', 'user', 'resident']);
         } else {
-            $query = AssetRequest::with(['items.asset', 'resident.profile'])->where('user_id', $user->id);
+            $query = AssetRequest::with(['items.asset', 'resident'])->where('user_id', $user->id);
         }
         
         // Apply pagination
@@ -236,7 +236,7 @@ class AssetRequestController extends Controller
     public function show($id)
     {
         $user = auth()->user();
-        $assetRequest = AssetRequest::with(['asset', 'resident.profile', 'user'])->find($id);
+        $assetRequest = AssetRequest::with(['asset', 'resident', 'user'])->find($id);
 
         if (!$assetRequest) {
             return response()->json(['error' => 'Asset request not found'], 404);
@@ -268,7 +268,7 @@ class AssetRequestController extends Controller
             ]);
 
             // Load the asset request with related data
-            $assetRequest = AssetRequest::with(['items.asset', 'resident.profile', 'user'])->findOrFail($validated['asset_request_id']);
+            $assetRequest = AssetRequest::with(['items.asset', 'resident', 'user'])->findOrFail($validated['asset_request_id']);
 
             // Check if request is paid
             if ($assetRequest->payment_status !== 'paid') {

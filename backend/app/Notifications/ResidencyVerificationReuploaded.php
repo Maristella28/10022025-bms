@@ -25,10 +25,12 @@ class ResidencyVerificationReuploaded extends Notification
 
     public function toMail($notifiable)
     {
+        $residentName = $this->resident->name ?? $this->resident->email ?? 'Unknown User';
+        
         return (new MailMessage)
             ->subject('Residency Verification Re-uploaded')
             ->greeting('Hello Admin,')
-            ->line("{$this->resident->name} has re-uploaded their residency verification document.")
+            ->line("{$residentName} has re-uploaded their residency verification document.")
             ->action('View Resident', url('/admin/residents/' . $this->resident->id))
             ->line('Please review the new document in the admin dashboard.');
     }

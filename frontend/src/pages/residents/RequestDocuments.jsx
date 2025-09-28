@@ -4,7 +4,7 @@ import axiosInstance from '../../utils/axiosConfig';
 import Navbares from "../../components/Navbares";
 import Sidebares from "../../components/Sidebares";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
-import { FaFileAlt, FaBusinessTime, FaIdBadge, FaHome, FaPaperPlane, FaUser, FaCalendarAlt, FaIdCard, FaStar, FaMagic, FaCheckCircle, FaCertificate, FaExclamationTriangle, FaInfoCircle, FaTimes, FaSpinner, FaCamera, FaUpload, FaImage, FaTrash, FaList, FaEye, FaDownload, FaClock, FaCheck } from 'react-icons/fa';
+import { FaFileAlt, FaBusinessTime, FaIdBadge, FaHome, FaPaperPlane, FaUser, FaCalendarAlt, FaIdCard, FaStar, FaMagic, FaCheckCircle, FaCertificate, FaExclamationTriangle, FaInfoCircle, FaTimes, FaSpinner, FaCamera, FaUpload, FaImage, FaTrash, FaList, FaEye, FaClock, FaCheck } from 'react-icons/fa';
 import './RequestDocuments.css';
 
 const RequestDocuments = () => {
@@ -69,7 +69,6 @@ const RequestDocuments = () => {
   const [requests, setRequests] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [loadingRequests, setLoadingRequests] = useState(false);
-  const [downloadingPdf, setDownloadingPdf] = useState(null);
 
   // Cache for resident data to avoid repeated API calls
   const [cachedResidentData, setCachedResidentData] = useState(() => {
@@ -330,7 +329,7 @@ const RequestDocuments = () => {
         setFormValues(autoFilledData);
         setFeedback({
           type: 'success',
-          message: '✅ Form auto-filled with your profile data',
+          message: '✅ Form auto-filled from your profile',
           duration: 3000
         });
       }
@@ -469,7 +468,7 @@ const RequestDocuments = () => {
           
           setFeedback({
             type: 'success',
-            message: '✅ Form auto-filled with your profile data',
+            message: '✅ Form auto-filled from your profile',
             duration: 3000
           });
           
@@ -571,31 +570,6 @@ const RequestDocuments = () => {
     }
   };
 
-  const handleDownloadPdf = async (request) => {
-    setDownloadingPdf(request.id);
-    try {
-  const response = await axiosInstance.get(`/document-requests/${request.id}/download-pdf`, {
-        responseType: 'blob'
-      });
-      
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${request.document_type}-${request.user?.name || 'certificate'}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Error downloading PDF:', err);
-      setFeedback({
-        type: 'error',
-        message: 'Failed to download PDF. Please try again.'
-      });
-    } finally {
-      setDownloadingPdf(null);
-    }
-  };
 
   const documentOptions = [
     {
@@ -724,7 +698,6 @@ const RequestDocuments = () => {
           businessOwner: getFullName(dataSource),
           businessAddress: getAddress(dataSource), // Add business address
           contact_number: getPhoneNumber(dataSource), // Add phone number
-          amount: '', // This might need manual input
         };
         console.log('✅ Generated Business Permit data:', businessData);
         return businessData;
@@ -789,7 +762,6 @@ const RequestDocuments = () => {
       { name: 'businessOwner', label: 'Business Owner', type: 'text', required: true, autoFill: true },
       { name: 'businessAddress', label: 'Business Address', type: 'text', required: true, autoFill: true },
       { name: 'contact_number', label: 'Contact Number', type: 'tel', required: true, autoFill: true },
-      { name: 'amount', label: 'Amount', type: 'number', required: true, autoFill: false },
       { name: 'purpose', label: 'Purpose', type: 'textarea', required: true, autoFill: false },
     ],
     'Brgy Indigency': [
@@ -987,7 +959,7 @@ const RequestDocuments = () => {
           
           setFeedback({
             type: 'success',
-            message: '✅ Form auto-filled with your profile data',
+            message: '✅ Form auto-filled from your profile',
             duration: 3000
           });
       
@@ -1003,7 +975,7 @@ const RequestDocuments = () => {
             setTimeout(() => {
               setFeedback({
                 type: 'success',
-                message: '📸 Profile photo and form data auto-filled successfully!',
+                message: '📸 Profile photo and form auto-filled!',
                 duration: 2000
               });
             }, 1000);
@@ -1598,16 +1570,6 @@ const RequestDocuments = () => {
                                 >
                                   <FaEye className="w-4 h-4" />
                                 </button>
-                                {request.status.toLowerCase() === 'approved' && request.pdf_path && (
-                                  <button
-                                    onClick={() => handleDownloadPdf(request)}
-                                    disabled={downloadingPdf === request.id}
-                                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                                  >
-                                    <FaDownload className="w-4 h-4" />
-                                    {downloadingPdf === request.id ? 'Downloading...' : 'Download PDF'}
-                                  </button>
-                                )}
                               </div>
                             </div>
                           </div>
@@ -2056,8 +2018,8 @@ const RequestDocuments = () => {
                   </div>
                 )}
                 
-                {/* Enhanced success animation */}
-                {feedback?.type === 'success' && (
+                {/* Enhanced success animation - only show for actual submission */}
+                {feedback?.type === 'success' && feedback?.message?.includes('submitted successfully') && (
                   <div className="flex flex-col items-center mt-4 space-y-2">
                     <div className="relative">
                       <div className="animate-bounce">
@@ -2099,7 +2061,7 @@ const RequestDocuments = () => {
                           setFormValues(autoFilledData);
                           setFeedback({
                             type: 'success',
-                            message: '✅ Form manually auto-filled!'
+                            message: '✅ Form manually auto-filled from profile!'
                           });
                         } else {
                           // Try session storage
@@ -2113,7 +2075,7 @@ const RequestDocuments = () => {
                               setFormValues(autoFilledData);
                               setFeedback({
                                 type: 'success',
-                                message: '✅ Form auto-filled from session storage!'
+                                message: '✅ Form auto-filled from cached profile!'
                               });
                             } catch (error) {
                               console.error('Failed to parse session data:', error);

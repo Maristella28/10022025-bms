@@ -302,11 +302,10 @@ const DocumentsRecords = () => {
     setFeedback({ type: 'loading', message: 'Saving changes...' });
     
     try {
-  await axiosInstance.patch(`/document-requests/${editData.id}`, {
+      await axiosInstance.patch(`/document-requests/${editData.id}`, {
         status: editData.status.toLowerCase(),
         priority: editData.priority,
         estimated_completion: editData.estimatedCompletion,
-        processing_notes: editData.processingNotes,
         fields: {
           purpose: editData.purpose,
           remarks: editData.remarks,
@@ -1353,16 +1352,6 @@ const DocumentsRecords = () => {
                       value={editData.estimatedCompletion ? new Date(editData.estimatedCompletion).toISOString().split('T')[0] : ''}
                       onChange={(e) => setEditData({...editData, estimatedCompletion: e.target.value})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Processing Notes</label>
-                    <textarea
-                      value={editData.processingNotes || ''}
-                      onChange={(e) => setEditData({...editData, processingNotes: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                      placeholder="Enter processing notes"
-                      rows={3}
                     />
                   </div>
                 </div>

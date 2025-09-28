@@ -312,7 +312,9 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
 
         // Projects reactions and viewing
         Route::post('/projects/{projectId}/react', [App\Http\Controllers\ProjectReactionController::class, 'react']);
+        Route::delete('/projects/{projectId}/react', [App\Http\Controllers\ProjectReactionController::class, 'removeReaction']);
         Route::get('/projects/{projectId}/reactions', [App\Http\Controllers\ProjectReactionController::class, 'index']);
+        Route::get('/projects/{projectId}/user-reaction', [App\Http\Controllers\ProjectReactionController::class, 'getUserReaction']);
 
         // Blotter Requests (resident submit)
         Route::post('/blotter-requests', [BlotterRequestController::class, 'store']);
@@ -360,7 +362,9 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
 
     // 💬 Project Reactions (Authenticated users)
     Route::post('/projects/{projectId}/react', [App\Http\Controllers\ProjectReactionController::class, 'react']);
+    Route::delete('/projects/{projectId}/react', [App\Http\Controllers\ProjectReactionController::class, 'removeReaction']);
     Route::get('/projects/{projectId}/reactions', [App\Http\Controllers\ProjectReactionController::class, 'index']);
+    Route::get('/projects/{projectId}/user-reaction', [App\Http\Controllers\ProjectReactionController::class, 'getUserReaction']);
 
     // Document Requests - Admin only routes (outside profile.complete middleware)
     Route::match(['put', 'patch'], '/document-requests/{id}', [App\Http\Controllers\DocumentRequestController::class, 'update']); // Admin update
@@ -439,10 +443,12 @@ Route::post('/blotter-records', [BlotterRecordsController::class, 'store']);
 // 📋 Projects (Read-only for all authenticated users)
 Route::get('/projects', [App\Http\Controllers\ProjectController::class, 'index']);
 
-// 📝 Feedback (Residents can submit and view their own)
-Route::post('/feedbacks', [App\Http\Controllers\FeedbackController::class, 'store']);
-Route::get('/feedbacks/my', [App\Http\Controllers\FeedbackController::class, 'myFeedback']);
-Route::get('/feedbacks', [App\Http\Controllers\FeedbackController::class, 'index']); // Allow filtering by project_id
+// 📝 Feedback (Residents can submit and view their own) - Protected by auth middleware
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/feedbacks', [App\Http\Controllers\FeedbackController::class, 'store']);
+    Route::get('/feedbacks/my', [App\Http\Controllers\FeedbackController::class, 'myFeedback']);
+    Route::get('/feedbacks', [App\Http\Controllers\FeedbackController::class, 'index']); // Allow filtering by project_id
+});
 
 // ✅ **New Backend Structure for Disaster/Emergency Records**
 // 1. **Model:**  

@@ -294,15 +294,22 @@
         
         <div class="info-section">
           <div class="info-fields">
-            @php $receiptFields = [
+            @php 
+            // Debug: Let's see what data is available
+            $resident = $assetRequest->resident;
+            $contactNumber = $resident->contact_number ?? $resident->mobile_number ?? 'N/A';
+            $address = $resident->full_address ?? $resident->current_address ?? 'N/A';
+            
+            $receiptFields = [
               ['RECEIPT NO.', $receiptNumber ?? 'N/A'],
               ['DATE ISSUED', \Carbon\Carbon::now()->format('M d, Y')],
               ['TIME ISSUED', \Carbon\Carbon::now()->format('h:i A')],
-              ['RESIDENT NAME', $assetRequest->resident->profile->first_name . ' ' . $assetRequest->resident->profile->last_name ?? 'N/A'],
-              ['RESIDENT ID', $assetRequest->resident->residents_id ?? 'N/A'],
-              ['CONTACT NUMBER', $assetRequest->resident->profile->contact_number ?? 'N/A'],
-              ['ADDRESS', $assetRequest->resident->profile->full_address ?? 'N/A'],
-            ]; @endphp
+              ['RESIDENT NAME', ($resident->first_name ?? '') . ' ' . ($resident->last_name ?? '') ?: 'N/A'],
+              ['RESIDENT ID', $resident->resident_id ?? 'N/A'],
+              ['CONTACT NUMBER', $contactNumber],
+              ['ADDRESS', $address],
+            ]; 
+            @endphp
 
             @foreach ($receiptFields as [$label, $value])
               <div class="info-field">
@@ -367,7 +374,7 @@
           </div>
           <div class="signature-area">
             <div class="signature-line"></div>
-            <div class="signature-name">{{ $assetRequest->resident->profile->first_name . ' ' . $assetRequest->resident->profile->last_name ?? 'N/A' }}</div>
+            <div class="signature-name">{{ ($assetRequest->resident->first_name ?? '') . ' ' . ($assetRequest->resident->last_name ?? '') ?: 'N/A' }}</div>
             <div class="signature-title">RESIDENT</div>
           </div>
         </div>
@@ -375,6 +382,17 @@
         <div class="notes">
           <p><strong>NOTE:</strong> This receipt is proof of payment for asset rental. Please keep this receipt for your records. No refunds or exchanges after 24 hours of payment.</p>
           <p style="margin-top: 5px; text-align: center; font-weight: 600;">Thank you for using our services!</p>
+          
+          <!-- Debug Information (remove in production) -->
+          <div style="margin-top: 10px; padding: 5px; background: #f0f0f0; font-size: 8px; color: #666;">
+            <strong>DEBUG INFO:</strong><br>
+            Contact Number (contact_number): {{ $resident->contact_number ?? 'NULL' }}<br>
+            Contact Number (mobile_number): {{ $resident->mobile_number ?? 'NULL' }}<br>
+            Address (full_address): {{ $resident->full_address ?? 'NULL' }}<br>
+            Address (current_address): {{ $resident->current_address ?? 'NULL' }}<br>
+            Resident ID: {{ $resident->resident_id ?? 'NULL' }}<br>
+            Resident Attributes: {{ implode(', ', array_keys($resident->getAttributes())) }}
+          </div>
         </div>
       </div>
     </div>

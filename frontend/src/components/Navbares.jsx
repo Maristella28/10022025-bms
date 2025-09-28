@@ -115,8 +115,6 @@ const Navbares = () => {
                   <ul className="py-2 text-sm text-gray-700">
                     <NavItem to="/" icon="fa-home" label="Home" />
                     <NavItem to="/user/profile" icon="fa-user" label="Profile" />
-                    <NavItem to="/messages" icon="fa-envelope" label="Messages" />
-                    <NavItem to="/settings" icon="fa-cog" label="Settings" />
                     <li>
                       <button
                         onClick={handleLogout}

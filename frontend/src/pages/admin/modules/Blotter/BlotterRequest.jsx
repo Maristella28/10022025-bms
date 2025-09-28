@@ -73,7 +73,7 @@ const BlotterRequest = () => {
   // Handle approve modal submit
   const submitApprove = () => {
     if (!approveDate) {
-      alert('Please select an approval date.');
+      alert('Please select an approved scheduled date.');
       return;
     }
     // Combine date and time for approved_date
@@ -109,7 +109,7 @@ const BlotterRequest = () => {
             <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
               <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
                 <h2 className="text-xl font-bold mb-4 text-green-800">Approve Blotter Request</h2>
-                <label className="block mb-2 font-semibold">Select Approval Date:</label>
+                <label className="block mb-2 font-semibold">Select Approved Scheduled Date:</label>
                 <input
                   type="date"
                   className="border border-gray-300 rounded-lg px-4 py-2 w-full mb-2"
@@ -159,7 +159,8 @@ const BlotterRequest = () => {
                     <th className="px-6 py-4 text-left font-semibold text-gray-700">Resident ID</th>
                     <th className="px-6 py-4 text-left font-semibold text-gray-700">Resident Name</th>
                     <th className="px-6 py-4 text-left font-semibold text-gray-700">Status</th>
-                    <th className="px-6 py-4 text-left font-semibold text-gray-700">Approved Date</th>
+                    <th className="px-6 py-4 text-left font-semibold text-gray-700">Approved Scheduled Date</th>
+                    <th className="px-6 py-4 text-left font-semibold text-gray-700">Approval Time</th>
                     <th className="px-6 py-4 text-left font-semibold text-gray-700">Ticket Number</th>
                     <th className="px-6 py-4 text-left font-semibold text-gray-700">Created At</th>
                     <th className="px-6 py-4 text-left font-semibold text-gray-700">Actions</th>
@@ -168,7 +169,7 @@ const BlotterRequest = () => {
                 <tbody className="divide-y divide-gray-100">
                   {requests.length === 0 ? (
                     <tr>
-                      <td colSpan="9" className="px-6 py-12 text-center text-gray-500">No blotter requests found.</td>
+                      <td colSpan="10" className="px-6 py-12 text-center text-gray-500">No blotter requests found.</td>
                     </tr>
                   ) : (
                     requests.map(req => (
@@ -185,6 +186,7 @@ const BlotterRequest = () => {
                           <span className={`px-3 py-1 rounded-full text-xs font-medium ${req.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : req.status === 'completed' ? 'bg-blue-100 text-blue-800' : req.status === 'approved' ? 'bg-green-100 text-green-800' : req.status === 'declined' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>{req.status}</span>
                         </td>
                         <td className="px-6 py-4">{req.approved_date ? new Date(req.approved_date).toLocaleDateString() : '-'}</td>
+                        <td className="px-6 py-4">{req.approved_date ? new Date(req.approved_date).toLocaleTimeString() : '-'}</td>
                         <td className="px-6 py-4">{req.ticket_number || '-'}</td>
                         <td className="px-6 py-4">{req.created_at ? new Date(req.created_at).toLocaleString() : 'N/A'}</td>
                         <td className="px-6 py-4">

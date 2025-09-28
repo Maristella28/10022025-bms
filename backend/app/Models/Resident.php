@@ -92,6 +92,7 @@ class Resident extends Model
         'relation_to_head',
         'email',
         'contact_number',
+        'mobile_number',
         'landline_number',
         'current_photo',
         'current_address',

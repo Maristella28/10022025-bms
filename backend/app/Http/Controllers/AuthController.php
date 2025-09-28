@@ -40,17 +40,52 @@ class AuthController extends Controller
                     'verification_code_expires_at' => now()->addMinute(),
                 ]);
                 
+                // Update or create profile with latest registration data
+                $profile = \App\Models\Profile::where('user_id', $recentUser->id)->first();
+                if ($profile) {
+                    // Update existing profile
+                    $profile->update([
+                        'first_name' => $request->first_name ?? $profile->first_name,
+                        'middle_name' => $request->middle_name ?? $profile->middle_name,
+                        'last_name' => $request->last_name ?? $profile->last_name,
+                        'name_suffix' => $request->suffix ?? $profile->name_suffix,
+                        'mobile_number' => $request->contact_number ?? $profile->mobile_number,
+                        'sex' => $request->sex ?? $profile->sex,
+                        'birth_date' => $request->birth_date ? \Carbon\Carbon::parse($request->birth_date)->format('Y-m-d') : $profile->birth_date,
+                        'current_address' => $request->address ?? $profile->current_address,
+                    ]);
+                } else {
+                    // Create new profile
+                    $profile = \App\Models\Profile::create([
+                        'user_id' => $recentUser->id,
+                        'resident_id' => 'R-' . $recentUser->id . '-' . time(),
+                        'first_name' => $request->first_name ?? '',
+                        'middle_name' => $request->middle_name ?? '',
+                        'last_name' => $request->last_name ?? '',
+                        'name_suffix' => $request->suffix ?? '',
+                        'email' => $request->email,
+                        'mobile_number' => $request->contact_number ?? '',
+                        'sex' => $request->sex ?? '',
+                        'birth_date' => $request->birth_date ? \Carbon\Carbon::parse($request->birth_date)->format('Y-m-d') : null,
+                        'current_address' => $request->address ?? '',
+                        'verification_status' => 'pending',
+                        'profile_completed' => false,
+                    ]);
+                }
+                
                 // Send verification code email
                 Mail::to($recentUser->email)->send(new VerificationCodeMail($recentUser, $verificationCode));
                 \Log::info('Resent verification code to existing unverified user:', [
                     'user_id' => $recentUser->id,
-                    'email' => $recentUser->email
+                    'email' => $recentUser->email,
+                    'profile_id' => $profile->id
                 ]);
                 
                 return response()->json([
                     'message' => 'Registration initiated. Please check your email for the verification code.',
                     'user_id' => $recentUser->id,
                     'email' => $recentUser->email,
+                    'profile_id' => $profile->id,
                     'requires_verification' => true,
                 ], 201);
             }
@@ -102,6 +137,31 @@ class AuthController extends Controller
                 'privacy_policy_accepted_at' => now(),
             ]);
 
+            // Create profile with registration data
+            $profile = \App\Models\Profile::create([
+                'user_id' => $user->id,
+                'resident_id' => 'R-' . $user->id . '-' . time(),
+                'first_name' => $request->first_name ?? '',
+                'middle_name' => $request->middle_name ?? '',
+                'last_name' => $request->last_name ?? '',
+                'name_suffix' => $request->suffix ?? '',
+                'email' => $request->email,
+                'mobile_number' => $request->contact_number ?? '',
+                'sex' => $request->sex ?? '',
+                'birth_date' => $request->birth_date ? \Carbon\Carbon::parse($request->birth_date)->format('Y-m-d') : null,
+                'current_address' => $request->address ?? '',
+                'verification_status' => 'pending',
+                'profile_completed' => false,
+            ]);
+
+            \Log::info('Profile created during registration:', [
+                'user_id' => $user->id,
+                'profile_id' => $profile->id,
+                'first_name' => $profile->first_name,
+                'last_name' => $profile->last_name,
+                'email' => $profile->email
+            ]);
+
             \Log::info('User created successfully:', [
                 'user_id' => $user->id,
                 'email' => $user->email,
@@ -130,6 +190,7 @@ class AuthController extends Controller
                 'message' => 'Registration initiated. Please check your email for the verification code.',
                 'user_id' => $user->id,
                 'email' => $user->email,
+                'profile_id' => $profile->id,
                 'requires_verification' => true,
             ], 201);
         } catch (\Exception $e) {

@@ -17,7 +17,7 @@ export default function Login() {
   const [verificationUserId, setVerificationUserId] = useState(null);
   const [verificationEmail, setVerificationEmail] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
-  const [timer, setTimer] = useState(60);
+  const [timer, setTimer] = useState(300); // 5 minutes (300 seconds)
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [resendStatus, setResendStatus] = useState('');
 
@@ -155,7 +155,7 @@ export default function Login() {
         setVerificationUserId(err.response.data.user_id);
         setVerificationEmail(email);
         setShowVerification(true);
-        setTimer(60);
+        setTimer(300);
         setIsTimerRunning(true);
         setStatus('');
         setResendStatus('');
@@ -182,7 +182,7 @@ export default function Login() {
       const data = await res.json();
       if (res.ok) {
         setResendStatus('Verification code resent! Check your email.');
-        setTimer(60);
+        setTimer(300);
         setIsTimerRunning(true);
         setVerificationCode('');
       } else {
@@ -244,11 +244,11 @@ export default function Login() {
             </div>
             <div className="space-y-4">
               <div className="text-center">
-                <div className={`text-lg font-bold ${timer <= 10 ? 'text-red-600' : 'text-blue-600'}`}>
+                <div className={`text-lg font-bold ${timer <= 60 ? 'text-red-600' : 'text-blue-600'}`}>
                   {formatTime(timer)}
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {timer > 0 ? 'Time remaining' : 'Code expired'}
+                  {timer > 0 ? 'Time remaining (5 minutes)' : 'Code expired'}
                 </p>
               </div>
               <form onSubmit={handleVerifyCode} className="space-y-4">

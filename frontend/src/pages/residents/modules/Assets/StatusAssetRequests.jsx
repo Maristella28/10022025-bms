@@ -3,6 +3,20 @@ import axios from '../../../../utils/axiosConfig'; // Adjust path if needed
 import { Link } from 'react-router-dom';
 import Navbares from "../../../../components/Navbares";
 import Sidebares from "../../../../components/Sidebares";
+import {
+  EyeIcon,
+  TrashIcon,
+  ArrowPathIcon,
+  DocumentArrowDownIcon,
+  CheckCircleIcon,
+  ClockIcon,
+  XCircleIcon,
+  CurrencyDollarIcon,
+  CalendarIcon,
+  ExclamationTriangleIcon,
+  PlusIcon,
+  MinusIcon
+} from '@heroicons/react/24/outline';
 
 const StatusAssetRequests = () => {
   const [requests, setRequests] = useState([]);
@@ -198,38 +212,57 @@ const StatusAssetRequests = () => {
       <>
         <Navbares />
         <Sidebares />
-        <main className="ml-64 pt-20 p-8 bg-white min-h-screen font-sans">
-          <div className="flex justify-between items-center mb-6">
-            <div className="h-8 bg-gray-300 rounded w-1/4 animate-pulse"></div>
-            <div className="flex gap-3">
-              <div className="h-10 bg-gray-300 rounded w-24 animate-pulse"></div>
-              <div className="h-10 bg-gray-300 rounded w-32 animate-pulse"></div>
-            </div>
+        <main className="bg-gradient-to-br from-slate-50 via-blue-50 to-emerald-50 min-h-screen ml-64 pt-36 px-6 pb-16 font-sans relative overflow-hidden">
+          {/* Animated background elements */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-emerald-200/30 to-blue-200/30 rounded-full blur-3xl animate-float"></div>
+            <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-br from-purple-200/30 to-pink-200/30 rounded-full blur-3xl animate-float-delayed"></div>
           </div>
-          
-          <div className="bg-gray-100 p-6 rounded-lg shadow-md">
-            <div className="space-y-4 animate-pulse">
-              {/* Table header skeleton */}
-              <div className="flex space-x-4">
-                <div className="h-6 bg-gray-300 rounded w-1/6"></div>
-                <div className="h-6 bg-gray-300 rounded w-1/6"></div>
-                <div className="h-6 bg-gray-300 rounded w-1/6"></div>
-                <div className="h-6 bg-gray-300 rounded w-1/6"></div>
-                <div className="h-6 bg-gray-300 rounded w-1/6"></div>
-                <div className="h-6 bg-gray-300 rounded w-1/6"></div>
+
+          <div className="w-full max-w-7xl mx-auto space-y-8 relative z-10">
+            {/* Header Skeleton */}
+            <div className="text-center space-y-6">
+              <div className="relative inline-flex items-center justify-center mb-6">
+                <div className="w-24 h-24 bg-gradient-to-br from-gray-200 to-gray-300 rounded-full animate-pulse"></div>
               </div>
-              
-              {/* Table rows skeleton */}
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex space-x-4 py-3 border-t border-gray-200">
-                  <div className="h-4 bg-gray-300 rounded w-1/6"></div>
-                  <div className="h-4 bg-gray-300 rounded w-1/6"></div>
-                  <div className="h-4 bg-gray-300 rounded w-1/6"></div>
-                  <div className="h-4 bg-gray-300 rounded w-1/6"></div>
-                  <div className="h-4 bg-gray-300 rounded w-1/6"></div>
-                  <div className="h-4 bg-gray-300 rounded w-1/6"></div>
+              <div className="h-12 bg-gray-300 rounded-xl w-1/3 mx-auto animate-pulse"></div>
+              <div className="h-6 bg-gray-300 rounded-lg w-1/2 mx-auto animate-pulse"></div>
+            </div>
+
+            {/* Stats Cards Skeleton */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-white/50 animate-pulse">
+                  <div className="flex justify-between items-center">
+                    <div className="space-y-3">
+                      <div className="h-4 bg-gray-300 rounded w-24"></div>
+                      <div className="h-8 bg-gray-300 rounded w-16"></div>
+                    </div>
+                    <div className="w-16 h-16 bg-gray-300 rounded-2xl"></div>
+                  </div>
                 </div>
               ))}
+            </div>
+
+            {/* Table Skeleton */}
+            <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl border border-white/50 p-8">
+              <div className="space-y-6">
+                {/* Table header skeleton */}
+                <div className="grid grid-cols-6 gap-4">
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} className="h-6 bg-gray-300 rounded-lg animate-pulse"></div>
+                  ))}
+                </div>
+                
+                {/* Table rows skeleton */}
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="grid grid-cols-6 gap-4 py-4 border-t border-gray-200">
+                    {[...Array(6)].map((_, j) => (
+                      <div key={j} className="h-4 bg-gray-300 rounded animate-pulse"></div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </main>
@@ -237,130 +270,311 @@ const StatusAssetRequests = () => {
     );
   }
 
+  // Calculate statistics
+  const totalRequests = requests.length;
+  const approvedRequests = requests.filter(item => getStatus(item) === 'Approved').length;
+  const pendingRequests = requests.filter(item => getStatus(item) === 'Pending').length;
+  const paidRequests = requests.filter(item => getPaymentStatus(item) === 'paid').length;
+  const totalAmount = requests.reduce((sum, item) => sum + getAmount(item), 0);
+
   return (
     <>
       <Navbares />
       <Sidebares />
-      <main className="ml-64 pt-20 p-8 bg-white min-h-screen font-sans">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-green-900">Asset Request Status</h1>
-          <div className="flex gap-3">
-            <button
-              onClick={fetchRequests}
-              className="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-5 rounded shadow"
-            >
-              Refresh
-            </button>
-            <Link to="/residents/requestAssets">
-              <button className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-5 rounded shadow">
-                ← Back to Request Assets
-              </button>
-            </Link>
-          </div>
+      <main className="bg-gradient-to-br from-slate-50 via-blue-50 to-emerald-50 min-h-screen ml-64 pt-36 px-6 pb-16 font-sans relative overflow-hidden">
+        {/* Animated background elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-emerald-200/30 to-blue-200/30 rounded-full blur-3xl animate-float"></div>
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-br from-purple-200/30 to-pink-200/30 rounded-full blur-3xl animate-float-delayed"></div>
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-br from-yellow-200/20 to-orange-200/20 rounded-full blur-3xl animate-pulse-slow"></div>
         </div>
 
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
+        <div className="w-full max-w-7xl mx-auto space-y-8 relative z-10">
+          {/* Enhanced Header */}
+          <div className="text-center space-y-6">
+            <div className="relative inline-flex items-center justify-center mb-6">
+              <div className="absolute inset-0 bg-gradient-to-r from-green-400 via-emerald-500 to-blue-600 rounded-full blur-xl opacity-30 animate-pulse-slow"></div>
+              <div className="relative w-24 h-24 bg-gradient-to-br from-green-500 via-emerald-500 to-blue-600 rounded-full shadow-2xl flex items-center justify-center transform hover:scale-110 transition-all duration-300">
+                <EyeIcon className="w-12 h-12 text-white drop-shadow-lg" />
+              </div>
+            </div>
+            <h1 className="text-5xl md:text-6xl font-black bg-gradient-to-r from-green-600 via-emerald-600 to-blue-600 bg-clip-text text-transparent tracking-tight leading-tight mb-4">
+              Asset Request Status
+            </h1>
+            <p className="text-gray-600 text-lg max-w-3xl mx-auto leading-relaxed font-medium">
+              Track and manage your barangay asset requests.
+              <span className="text-emerald-600 font-semibold"> Stay updated on your requests and payments.</span>
+            </p>
           </div>
-        )}
 
-        <div className="flex justify-between items-center mb-4">
-          {lastDeleted && (
-            <button
-              onClick={handleUndo}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm shadow"
-            >
-              Undo Delete
-            </button>
+          {/* Enhanced Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+            <StatCard
+              label="Total Requests"
+              value={totalRequests}
+              icon={<EyeIcon className="w-6 h-6 text-white" />}
+              iconBg="bg-gradient-to-br from-green-500 to-emerald-600"
+              gradient="from-green-500 to-emerald-600"
+            />
+            <StatCard
+              label="Approved"
+              value={approvedRequests}
+              icon={<CheckCircleIcon className="w-6 h-6 text-white" />}
+              iconBg="bg-gradient-to-br from-emerald-500 to-green-600"
+              gradient="from-emerald-500 to-green-600"
+            />
+            <StatCard
+              label="Pending"
+              value={pendingRequests}
+              icon={<ClockIcon className="w-6 h-6 text-white" />}
+              iconBg="bg-gradient-to-br from-yellow-500 to-orange-500"
+              gradient="from-yellow-500 to-orange-500"
+            />
+            <StatCard
+              label="Paid"
+              value={paidRequests}
+              icon={<CurrencyDollarIcon className="w-6 h-6 text-white" />}
+              iconBg="bg-gradient-to-br from-blue-500 to-indigo-600"
+              gradient="from-blue-500 to-indigo-600"
+            />
+            <StatCard
+              label="Total Amount"
+              value={`₱${totalAmount.toFixed(2)}`}
+              icon={<CurrencyDollarIcon className="w-6 h-6 text-white" />}
+              iconBg="bg-gradient-to-br from-purple-500 to-pink-600"
+              gradient="from-purple-500 to-pink-600"
+            />
+          </div>
+
+          {/* Enhanced Controls */}
+          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-2xl border border-white/50 p-8 mb-8">
+            <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={fetchRequests}
+                  className="group flex items-center gap-3 px-6 py-3 font-bold rounded-2xl shadow-xl transition-all duration-300 transform hover:scale-105 bg-gradient-to-r from-green-600 via-emerald-600 to-blue-600 hover:from-green-700 hover:via-emerald-700 hover:to-blue-700 text-white border-2 border-green-400 hover:border-green-300 relative overflow-hidden"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <ArrowPathIcon className="w-5 h-5 relative z-10" />
+                  <span className="relative z-10">Refresh</span>
+                </button>
+                <Link to="/residents/requestAssets">
+                  <button className="group flex items-center gap-3 px-6 py-3 font-bold rounded-2xl shadow-xl transition-all duration-300 transform hover:scale-105 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white border-2 border-gray-400 hover:border-gray-300 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    <EyeIcon className="w-5 h-5 relative z-10" />
+                    <span className="relative z-10">← Back to Request Assets</span>
+                  </button>
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-2xl font-medium flex items-center gap-3 mb-6">
+              <ExclamationTriangleIcon className="w-6 h-6 text-red-500" />
+              {error}
+            </div>
           )}
-          <button
-            onClick={handleClearAll}
-            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm shadow ml-auto"
-          >
-            Clear All User Requests
-          </button>
-        </div>
 
-        <div className="bg-gray-100 p-6 rounded-lg shadow-md">
-          <table className="min-w-full text-sm bg-white rounded overflow-hidden">
-            <thead className="bg-green-200 text-green-900 text-xs uppercase">
-              <tr>
-                <th className="px-6 py-3 text-left font-medium">Asset</th>
-                <th className="px-6 py-3 text-left font-medium">Date Requested</th>
-                <th className="px-6 py-3 text-left font-medium">Status</th>
-                <th className="px-6 py-3 text-left font-medium">Payment Status</th>
-                <th className="px-6 py-3 text-left font-medium">Amount</th>
-                <th className="px-6 py-3 text-left font-medium">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((item, index) => (
-                <tr key={index} className="border-t hover:bg-green-50">
-                  <td className="px-6 py-4">{renderText(getAssetName(item))}</td>
-                  <td className="px-6 py-4">{renderText(getDate(item))}</td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                        getStatus(item) === 'Approved'
-                          ? 'bg-green-100 text-green-700'
-                          : getStatus(item) === 'Pending'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}
-                    >
-                      {renderText(getStatus(item))}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                        getPaymentStatus(item) === 'paid'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-700'
-                      }`}
-                    >
-                      {getPaymentStatus(item) === 'paid' ? 'Paid' : 'Unpaid'}
-                    </span>
-                    {getReceiptNumber(item) && (
-                      <div className="text-xs text-gray-600 mt-1">
-                        Receipt: {getReceiptNumber(item)}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    ₱{(getAmount(item) || 0).toFixed(2)}
-                  </td>
-                  <td className="px-6 py-4">
-                    {getPaymentStatus(item) === 'paid' && getReceiptNumber(item) && (
-                      <button
-                        onClick={() => generateReceipt(item)}
-                        className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs mr-2"
-                      >
-                        Download Receipt
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleDelete(index)}
-                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-xs"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {requests.length === 0 && (
-                <tr>
-                  <td colSpan="6" className="text-center text-gray-500 py-4">
-                    No asset requests found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          {/* Action Buttons */}
+          <div className="flex justify-between items-center mb-6">
+            {lastDeleted && (
+              <button
+                onClick={handleUndo}
+                className="group flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-lg transition-all duration-300 transform hover:scale-105"
+              >
+                <ArrowPathIcon className="w-4 h-4" />
+                Undo Delete
+              </button>
+            )}
+            <button
+              onClick={handleClearAll}
+              className="group flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-semibold shadow-lg transition-all duration-300 transform hover:scale-105 ml-auto"
+            >
+              <TrashIcon className="w-4 h-4" />
+              Clear All User Requests
+            </button>
+          </div>
+
+          {/* Enhanced Table */}
+          <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl border border-white/50 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead className="bg-gradient-to-r from-green-500 via-emerald-500 to-blue-600 text-white">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-bold text-sm uppercase tracking-wider">Asset</th>
+                    <th className="px-6 py-4 text-left font-bold text-sm uppercase tracking-wider">Date Requested</th>
+                    <th className="px-6 py-4 text-left font-bold text-sm uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-left font-bold text-sm uppercase tracking-wider">Payment Status</th>
+                    <th className="px-6 py-4 text-left font-bold text-sm uppercase tracking-wider">Amount</th>
+                    <th className="px-6 py-4 text-left font-bold text-sm uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {requests.map((item, index) => (
+                    <tr key={index} className="group hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50 transition-all duration-300">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex items-center justify-center">
+                            <EyeIcon className="w-5 h-5 text-green-600" />
+                          </div>
+                          <div>
+                            <div className="font-semibold text-gray-900">{renderText(getAssetName(item))}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <CalendarIcon className="w-4 h-4" />
+                          {renderText(getDate(item))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <StatusBadge status={getStatus(item)} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          <PaymentBadge status={getPaymentStatus(item)} />
+                          {getReceiptNumber(item) && (
+                            <div className="text-xs text-gray-500 font-medium">
+                              Receipt: {getReceiptNumber(item)}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1 text-lg font-bold text-green-600">
+                          <CurrencyDollarIcon className="w-5 h-5" />
+                          ₱{(getAmount(item) || 0).toFixed(2)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          {getPaymentStatus(item) === 'paid' && getReceiptNumber(item) && (
+                            <button
+                              onClick={() => generateReceipt(item)}
+                              className="group/btn flex items-center gap-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-xs font-semibold shadow-lg transition-all duration-300 transform hover:scale-105"
+                            >
+                              <DocumentArrowDownIcon className="w-4 h-4" />
+                              Download
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDelete(index)}
+                            className="group/btn flex items-center gap-1 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-semibold shadow-lg transition-all duration-300 transform hover:scale-105"
+                          >
+                            <TrashIcon className="w-4 h-4" />
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {requests.length === 0 && (
+                    <tr>
+                      <td colSpan="6" className="text-center py-16">
+                        <div className="flex flex-col items-center gap-4">
+                          <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center">
+                            <EyeIcon className="w-8 h-8 text-gray-400" />
+                          </div>
+                          <div>
+                            <p className="text-gray-500 font-bold text-lg">No asset requests found</p>
+                            <p className="text-gray-400 text-sm">Your requests will appear here once submitted</p>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </main>
+
+      {/* CSS Animations */}
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-20px) rotate(5deg); }
+        }
+        @keyframes float-delayed {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-15px) rotate(-3deg); }
+        }
+        @keyframes pulse-slow {
+          0%, 100% { opacity: 0.2; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(1.05); }
+        }
+        .animate-float { animation: float 6s ease-in-out infinite; }
+        .animate-float-delayed { animation: float-delayed 8s ease-in-out infinite; }
+        .animate-pulse-slow { animation: pulse-slow 4s ease-in-out infinite; }
+      `}</style>
     </>
+  );
+};
+
+// StatCard Component
+const StatCard = ({ label, value, icon, iconBg, gradient }) => (
+  <div className="group bg-white/90 backdrop-blur-sm rounded-3xl p-6 shadow-xl border border-white/50 hover:shadow-2xl transition-all duration-500 flex justify-between items-center transform hover:-translate-y-2 relative overflow-hidden">
+    <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+    <div className="relative z-10">
+      <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">{label}</p>
+      <p className={`text-2xl font-black bg-gradient-to-r ${gradient} bg-clip-text text-transparent group-hover:scale-110 transition-transform duration-300`}>{value}</p>
+    </div>
+    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${iconBg} group-hover:scale-110 transition-transform duration-300 shadow-lg`}>
+      {icon}
+    </div>
+  </div>
+);
+
+// Status Badge Component
+const StatusBadge = ({ status }) => {
+  const getStatusConfig = (status) => {
+    switch (status) {
+      case 'Approved':
+        return {
+          bg: 'bg-green-100',
+          text: 'text-green-800',
+          icon: <CheckCircleIcon className="w-4 h-4" />
+        };
+      case 'Pending':
+        return {
+          bg: 'bg-yellow-100',
+          text: 'text-yellow-800',
+          icon: <ClockIcon className="w-4 h-4" />
+        };
+      default:
+        return {
+          bg: 'bg-red-100',
+          text: 'text-red-800',
+          icon: <XCircleIcon className="w-4 h-4" />
+        };
+    }
+  };
+
+  const config = getStatusConfig(status);
+  
+  return (
+    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${config.bg} ${config.text}`}>
+      {config.icon}
+      {status}
+    </span>
+  );
+};
+
+// Payment Badge Component
+const PaymentBadge = ({ status }) => {
+  const isPaid = status === 'paid';
+  
+  return (
+    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${
+      isPaid ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+    }`}>
+      <CurrencyDollarIcon className="w-4 h-4" />
+      {isPaid ? 'Paid' : 'Unpaid'}
+    </span>
   );
 };
 

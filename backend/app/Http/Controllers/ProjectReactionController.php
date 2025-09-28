@@ -23,7 +23,7 @@ class ProjectReactionController extends Controller
 
         return response()->json([
             'like' => $reactions['like'] ?? 0,
-            'love' => $reactions['love'] ?? 0,
+            'dislike' => $reactions['dislike'] ?? 0,
         ]);
     }
 
@@ -37,7 +37,7 @@ class ProjectReactionController extends Controller
             return response()->json(['message' => 'You must be logged in to react.'], 401);
         }
         $request->validate([
-            'reaction_type' => 'required|string|in:like,love',
+            'reaction_type' => 'required|string|in:like,dislike',
         ]);
 
         $userId = $user->id;
@@ -56,6 +56,42 @@ class ProjectReactionController extends Controller
                 'reaction_type' => $reactionType,
             ]);
         }
+
+        return $this->index($request, $projectId);
+    }
+
+    /**
+     * Get user's reaction for a project
+     */
+    public function getUserReaction(Request $request, $projectId): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'You must be logged in.'], 401);
+        }
+
+        $reaction = ProjectReaction::where('project_id', $projectId)
+            ->where('user_id', $user->id)
+            ->first();
+
+        return response()->json([
+            'reaction_type' => $reaction ? $reaction->reaction_type : null
+        ]);
+    }
+
+    /**
+     * Remove user's reaction from a project
+     */
+    public function removeReaction(Request $request, $projectId): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'You must be logged in.'], 401);
+        }
+
+        ProjectReaction::where('project_id', $projectId)
+            ->where('user_id', $user->id)
+            ->delete();
 
         return $this->index($request, $projectId);
     }

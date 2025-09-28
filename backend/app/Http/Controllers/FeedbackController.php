@@ -26,6 +26,11 @@ class FeedbackController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        // Check if user is authenticated
+        if (!$request->user()) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
         $request->validate([
             'subject' => 'required|string|max:255',
             'message' => 'required|string',
@@ -33,16 +38,23 @@ class FeedbackController extends Controller
             'project_id' => 'nullable|exists:projects,id',
         ]);
 
-        $feedback = Feedback::create([
-            'user_id' => $request->user()->id,
-            'subject' => $request->subject,
-            'message' => $request->message,
-            'category' => $request->category,
-            'status' => 'Pending',
-            'project_id' => $request->project_id,
-        ]);
+        try {
+            $feedback = Feedback::create([
+                'user_id' => $request->user()->id,
+                'subject' => $request->subject,
+                'message' => $request->message,
+                'category' => $request->category,
+                'status' => 'Pending',
+                'project_id' => $request->project_id,
+            ]);
 
-        return response()->json($feedback, 201);
+            return response()->json($feedback->load('user'), 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to create feedback',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

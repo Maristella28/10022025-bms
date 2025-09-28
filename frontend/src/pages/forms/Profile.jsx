@@ -87,7 +87,6 @@ const Profile = () => {
     resident_id: null, // use resident_id instead of residents_id
     housing_type: '',
     head_of_family: false,
-    household_no: '',
     classified_sector: '',
     educational_attainment: '',
     occupation_type: '',
@@ -102,7 +101,6 @@ const Profile = () => {
     business_location: '',
     voters_id_number: '',
     voting_location: '',
-    vaccine_received: [],
     other_vaccine: '',
     year_vaccinated: '',
     residency_verification_image: null,
@@ -115,6 +113,7 @@ const Profile = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [showImageReminder, setShowImageReminder] = useState(false);
 
   // Show Congratulations when profile is completed - use localStorage to track if already shown
   const [showCongrats, setShowCongrats] = useState(() => {
@@ -168,6 +167,17 @@ const Profile = () => {
     }
   }, [isFullyCompleted, loading, showCongrats]);
 
+  // Check if user needs to upload profile image and show reminder
+  useEffect(() => {
+    if (form.verification_status === 'approved' && !loading && !form.current_photo) {
+      const hasShownImageReminder = sessionStorage.getItem('imageReminderShown');
+      if (!hasShownImageReminder) {
+        setShowImageReminder(true);
+        sessionStorage.setItem('imageReminderShown', 'true');
+      }
+    }
+  }, [form.verification_status, form.current_photo, loading]);
+
   const handleGoDashboard = () => {
     setShowCongrats(false);
     navigate('/residents/dashboard');
@@ -177,6 +187,19 @@ const Profile = () => {
   const handleEditProfile = () => {
     setShowCongrats(false);
     setIsEditing(true);
+  };
+
+  // Function to handle image upload reminder - scroll to photo section
+  const handleImageUploadReminder = () => {
+    setShowImageReminder(false);
+    setIsEditing(true);
+    // Scroll to photo upload section after a short delay
+    setTimeout(() => {
+      const photoSection = document.querySelector('[data-photo-section]');
+      if (photoSection) {
+        photoSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
   };
 
   // Step 3: Profile Completed Screen
@@ -231,16 +254,14 @@ const Profile = () => {
         const profile = res.data?.user?.profile || res.data?.profile || res.data;
         if (!profile) return;
         
-        console.log('Initial profile load:', profile); // Debug log
-        console.log('Profile ID fields:', {
-          resident_id: profile.resident_id,
-          residents_id: profile.residents_id,
-          id: profile.id,
-          allKeys: Object.keys(profile)
-        }); // Debug log for ID fields
         
         // If profile is approved and new, set editing mode
         if (profile.verification_status === 'approved' && !profile.profile_completed) {
+          setIsEditing(true);
+        }
+        
+        // If profile is approved but profile_completed is null/undefined, also set editing mode
+        if (profile.verification_status === 'approved' && (profile.profile_completed === null || profile.profile_completed === undefined)) {
           setIsEditing(true);
         }
         
@@ -248,19 +269,29 @@ const Profile = () => {
           // If the backend returns 'avatar', treat it as 'current_photo' for backward compatibility
           let currentPhoto = profile.current_photo || profile.avatar || null;
           
-          return {
+          const newForm = {
             ...prev,
             ...profile,
             verification_status: profile.verification_status, // Ensure verification status is set
             birth_date: formatDate(profile.birth_date),
             special_categories: Array.isArray(profile.special_categories) ? profile.special_categories : [],
-            vaccine_received: Array.isArray(profile.vaccine_received) ? profile.vaccine_received : [],
+            covid_vaccine_status: profile.covid_vaccine_status || '',
             head_of_family: !!profile.head_of_family,
             business_outside_barangay: !!profile.business_outside_barangay,
             mobile_number: profile.mobile_number ?? profile.contact_number ?? '',
             current_address: profile.current_address ?? profile.full_address ?? '',
             current_photo: currentPhoto,
           };
+          
+          // Calculate age from birth date if not already set
+          if (profile.birth_date && !newForm.age) {
+            const birthYear = new Date(profile.birth_date).getFullYear();
+            const currentYear = new Date().getFullYear();
+            newForm.age = currentYear - birthYear;
+          }
+          
+          
+          return newForm;
         });
         // Set isEditing to false if profile is completed
         if (profile.profile_completed === true || profile.profile_completed === '1') {
@@ -311,7 +342,6 @@ const Profile = () => {
                 verification_status: 'approved',
                 birth_date: formatDate(fullProfile.birth_date),
                 special_categories: Array.isArray(fullProfile.special_categories) ? fullProfile.special_categories : [],
-                vaccine_received: Array.isArray(fullProfile.vaccine_received) ? fullProfile.vaccine_received : [],
                 head_of_family: !!fullProfile.head_of_family,
                 business_outside_barangay: !!fullProfile.business_outside_barangay,
                 mobile_number: fullProfile.mobile_number ?? fullProfile.contact_number ?? '',
@@ -347,7 +377,16 @@ const Profile = () => {
         const currentYear = new Date().getFullYear();
         updated.birth_date = value;
         updated.age = currentYear - birthYear;
-      } else if (name === 'special_categories' || name === 'vaccine_received') {
+      } else if (name === 'years_in_barangay') {
+        // Validate years in barangay: must be between 0 and person's age (max 100)
+        const numValue = parseInt(value);
+        const currentAge = updated.age || 0;
+        const maxYears = Math.min(currentAge, 100);
+        if (value === '' || (numValue >= 0 && numValue <= maxYears)) {
+          updated[name] = value;
+        }
+        // If invalid, don't update the value
+      } else if (name === 'special_categories') {
         const updatedSet = new Set(prev[name] || []);
         if (checked) {
           updatedSet.add(value);
@@ -359,6 +398,8 @@ const Profile = () => {
         updated[name] = checked;
       } else if (name === 'current_photo' && files?.length > 0) {
         updated.current_photo = files[0];
+        // Reset image reminder when photo is uploaded
+        setShowImageReminder(false);
       } else if (name === 'residency_verification_image' && files?.length > 0) {
         updated.residency_verification_image = files[0];
       } else {
@@ -406,7 +447,6 @@ const Profile = () => {
                 ...profile,
                 birth_date: formatDate(profile.birth_date),
                 special_categories: Array.isArray(profile.special_categories) ? profile.special_categories : [],
-                vaccine_received: Array.isArray(profile.vaccine_received) ? profile.vaccine_received : [],
                 head_of_family: !!profile.head_of_family,
                 business_outside_barangay: !!profile.business_outside_barangay,
                 mobile_number: profile.mobile_number ?? profile.contact_number ?? '',
@@ -470,6 +510,13 @@ const Profile = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex flex-col font-sans">
       <Navbares />
       <Sidebares />
+      
+      {/* Image Upload Reminder Modal */}
+      <ImageReminderModal 
+        isOpen={showImageReminder}
+        onClose={() => setShowImageReminder(false)}
+        onUpload={handleImageUploadReminder}
+      />
       {/* Sticky Header */}
       <div className="sticky top-0 z-40 w-full bg-white/80 backdrop-blur border-b border-gray-200 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -593,7 +640,40 @@ const Profile = () => {
           {/* Main Profile Content */}
           <div className="w-full max-w-5xl mx-auto">
             {/* Show only residency verification when not verified, full profile when verified */}
-            {form.verification_status === 'approved' ? (
+            {loading ? (
+              // Show loading state while profile data is being fetched
+              <div className="bg-white/95 shadow-xl rounded-3xl border border-gray-100 overflow-hidden mt-4 mb-10">
+                <div className="p-6 md:p-14">
+                  <div className="flex flex-col items-center text-center py-16">
+                    <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                    <h3 className="text-xl font-bold text-blue-800 mb-2">Loading profile...</h3>
+                    <p className="text-blue-600">Please wait while we load your profile information.</p>
+                  </div>
+                </div>
+              </div>
+            ) : !form.resident_id && !form.verification_status ? (
+              // Show loading if we don't have any profile data yet
+              <div className="bg-white/95 shadow-xl rounded-3xl border border-gray-100 overflow-hidden mt-4 mb-10">
+                <div className="p-6 md:p-14">
+                  <div className="flex flex-col items-center text-center py-16">
+                    <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                    <h3 className="text-xl font-bold text-blue-800 mb-2">Loading profile...</h3>
+                    <p className="text-blue-600">Please wait while we load your profile information.</p>
+                  </div>
+                </div>
+              </div>
+            ) : !form.resident_id && !form.verification_status ? (
+              // Show loading if we don't have any profile data yet
+              <div className="bg-white/95 shadow-xl rounded-3xl border border-gray-100 overflow-hidden mt-4 mb-10">
+                <div className="p-6 md:p-14">
+                  <div className="flex flex-col items-center text-center py-16">
+                    <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                    <h3 className="text-xl font-bold text-blue-800 mb-2">Loading profile...</h3>
+                    <p className="text-blue-600">Please wait while we load your profile information.</p>
+                  </div>
+                </div>
+              </div>
+            ) : form.verification_status === 'approved' ? (
               // Show profile form when verified
               <>
                 {currentStep === 3 && showCongrats ? (
@@ -622,8 +702,8 @@ const Profile = () => {
                 <div className="p-6 md:p-14">
                   <ResidencyVerification 
                     form={form} 
-                    onImageUpload={() => {
-                      // Force refresh profile data when image is uploaded
+                    onImageUpload={(data) => {
+                      // Force refresh profile data when image is uploaded or status changes
                       axiosInstance.get('/profile')
                         .then(res => {
                           const profile = res.data?.user?.profile || res.data?.profile || res.data;
@@ -632,8 +712,14 @@ const Profile = () => {
                               ...prev,
                               ...profile,
                               verification_status: profile.verification_status,
-                              residency_verification_image: profile.residency_verification_image
+                              residency_verification_image: profile.residency_verification_image,
+                              profile_completed: profile.profile_completed
                             }));
+                            
+                            // If verification is approved, automatically enter edit mode
+                            if (profile.verification_status === 'approved' && !profile.profile_completed) {
+                              setIsEditing(true);
+                            }
                           }
                         })
                         .catch(err => console.error('Error refreshing profile:', err));
@@ -646,6 +732,51 @@ const Profile = () => {
           <div className="h-4"></div>
         </div>
       </main>
+    </div>
+  );
+};
+
+// Image Upload Reminder Modal
+const ImageReminderModal = ({ isOpen, onClose, onUpload }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 transform transition-all duration-300 scale-100">
+        <div className="p-8 text-center">
+          {/* Icon */}
+          <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ImageIcon className="w-10 h-10 text-orange-600" />
+          </div>
+          
+          {/* Title */}
+          <h3 className="text-2xl font-bold text-gray-800 mb-4">
+            Profile Photo Required
+          </h3>
+          
+          {/* Message */}
+          <p className="text-gray-600 mb-8 leading-relaxed">
+            To complete your profile, please upload a clear profile photo. This helps us identify you and provides better service.
+          </p>
+          
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={onUpload}
+              className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-8 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
+            >
+              <ImageIcon className="w-5 h-5" />
+              Upload Photo
+            </button>
+            <button
+              onClick={onClose}
+              className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-8 py-3 rounded-xl font-semibold transition-all duration-200"
+            >
+              Later
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -682,16 +813,29 @@ const ReadOnlyView = ({ form, setIsEditing, onEditClick }) => {
                   : 'https://flowbite.com/docs/images/people/profile-picture-5.jpg'
               }
               alt="Avatar"
-              className="w-32 h-32 object-cover rounded-full border-4 border-green-300 shadow-xl"
+              className={`w-32 h-32 object-cover rounded-full border-4 shadow-xl ${
+                form.current_photo ? 'border-green-300' : 'border-orange-300'
+              }`}
               onError={(e) => {
                 console.log('ReadOnlyView avatar load error:', e.target.src);
                 e.target.onerror = null;
                 e.target.src = 'https://flowbite.com/docs/images/people/profile-picture-5.jpg';
               }}
             />
-            <div className="absolute -bottom-2 -right-2 bg-green-500 rounded-full p-2 shadow-lg">
-              <User className="w-4 h-4 text-white" />
+            <div className={`absolute -bottom-2 -right-2 rounded-full p-2 shadow-lg ${
+              form.current_photo ? 'bg-green-500' : 'bg-orange-500'
+            }`}>
+              {form.current_photo ? (
+                <User className="w-4 h-4 text-white" />
+              ) : (
+                <ImageIcon className="w-4 h-4 text-white" />
+              )}
             </div>
+            {!form.current_photo && (
+              <div className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs px-2 py-1 rounded-full font-bold animate-pulse">
+                Upload Required
+              </div>
+            )}
           </div>
 
           {/* Name and ID */}
@@ -728,10 +872,19 @@ const ReadOnlyView = ({ form, setIsEditing, onEditClick }) => {
       <div className="w-full space-y-6">
       {/* Personal Information */}
       <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-        <h3 className="text-xl font-bold text-green-800 mb-6 flex items-center gap-2">
-          <User className="w-5 h-5" />
-          Personal Information
-        </h3>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-bold text-green-800 flex items-center gap-2">
+            <User className="w-5 h-5" />
+            Personal Information
+          </h3>
+          {form.verification_status === 'approved' && (
+            <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+              <p className="text-xs text-green-700 font-medium">
+                ✏️ Click "Edit Profile" to correct any misspelled names
+              </p>
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <InfoCard icon={<User className="w-5 h-5" />} label="First Name" value={form.first_name || '—'} />
           <InfoCard icon={<User className="w-5 h-5" />} label="Middle Name" value={form.middle_name || '—'} />
@@ -774,7 +927,6 @@ const ReadOnlyView = ({ form, setIsEditing, onEditClick }) => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <InfoCard icon={<Home className="w-5 h-5" />} label="Housing Type" value={form.housing_type || '—'} />
             <InfoCard icon={<User className="w-5 h-5" />} label="Head of Family" value={form.head_of_family ? 'Yes' : 'No'} />
-            <InfoCard icon={<User className="w-5 h-5" />} label="Household No." value={form.household_no || '—'} />
           </div>
         </div>
       </div>
@@ -848,15 +1000,11 @@ const ReadOnlyView = ({ form, setIsEditing, onEditClick }) => {
         <h3 className="text-xl font-bold text-green-800 mb-6 flex items-center gap-2">
           💉 COVID Vaccination
         </h3>
-        {form.vaccine_received?.length > 0 ? (
+        {form.covid_vaccine_status ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {form.vaccine_received.map((vaccine, idx) => (
-                <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-center gap-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <span className="text-sm font-medium text-blue-800">{vaccine}</span>
-                </div>
-              ))}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-center gap-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              <span className="text-sm font-medium text-blue-800">{form.covid_vaccine_status}</span>
             </div>
             {(form.other_vaccine || form.year_vaccinated) && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-200">
@@ -942,15 +1090,37 @@ const InfoCard = ({ icon, label, value, fullWidth = false }) => (
 );
 
 const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitting }) => {
-  // List of required fields for profile completion
-  const requiredFields = [
-    'first_name', 'last_name', 'birth_date', 'sex', 'civil_status', 'religion',
-    'current_address', 'years_in_barangay', 'voter_status', 'housing_type',
-    'classified_sector', 'educational_attainment', 'occupation_type', 'salary_income', 'current_photo'
+  // Updated required fields configuration based on requirements
+  const requiredFields = {
+    personal: [
+      'first_name', 'last_name', 'birth_date', 'birth_place', 'sex', 'civil_status', 'religion', 
+      'nationality', 'relation_to_head', 'email', 'mobile_number'
+    ],
+    address: [
+      'current_address', 'years_in_barangay'
+    ],
+    education: [
+      'classified_sector', 'educational_attainment', 'occupation_type', 'salary_income'
+    ],
+    voter: [
+      'voter_status', 'voters_id_number', 'voting_location'
+    ],
+    profile: [
+      'current_photo'
+    ]
+  };
+
+  // Flatten all required fields for validation
+  const allRequiredFields = [
+    ...requiredFields.personal,
+    ...requiredFields.address,
+    ...requiredFields.education,
+    ...requiredFields.voter,
+    ...requiredFields.profile
   ];
 
   // Find missing required fields
-  const missingFields = requiredFields.filter(field => {
+  const missingFields = allRequiredFields.filter(field => {
     if (field === 'current_photo') {
       return !form.current_photo;
     }
@@ -962,13 +1132,19 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
     first_name: 'First Name',
     last_name: 'Last Name',
     birth_date: 'Birth Date',
+    birth_place: 'Birth Place',
     sex: 'Sex',
     civil_status: 'Civil Status',
     religion: 'Religion',
+    nationality: 'Nationality',
+    relation_to_head: 'Relation to Head',
+    email: 'Email',
+    mobile_number: 'Mobile Number',
     current_address: 'Current Address',
     years_in_barangay: 'Years in Barangay',
     voter_status: 'Voter Status',
-    housing_type: 'Housing Type',
+    voters_id_number: 'Voter\'s ID Number',
+    voting_location: 'Voting Location',
     classified_sector: 'Classified Sector',
     educational_attainment: 'Educational Attainment',
     occupation_type: 'Occupation Type',
@@ -976,8 +1152,33 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
     current_photo: 'Profile Photo',
   };
 
-  // Prevent submit if missing required fields
-  const canSubmit = missingFields.length === 0;
+  // Validate mobile number format
+  const isMobileNumberValid = !form.mobile_number || (form.mobile_number.length === 11 && form.mobile_number.startsWith('09') && /^09[0-9]{9}$/.test(form.mobile_number));
+  
+  // Validate birth date (must be in the past, not today or future)
+  const isBirthDateValid = !form.birth_date || new Date(form.birth_date) < new Date(new Date().setHours(0,0,0,0));
+  
+  // Validate years in barangay (must be between 0 and person's age, and not exceed 100)
+  const currentAge = form.age || 0;
+  const maxYearsInBarangay = Math.min(currentAge, 100);
+  const isYearsInBarangayValid = !form.years_in_barangay || (form.years_in_barangay >= 0 && form.years_in_barangay <= maxYearsInBarangay);
+  
+  // Prevent submit if missing required fields, mobile number is invalid, birth date is invalid, or years in barangay is invalid
+  const canSubmit = missingFields.length === 0 && isMobileNumberValid && isBirthDateValid && isYearsInBarangayValid;
+
+  // Helper function to check if a field is required
+  const isFieldRequired = (fieldName) => allRequiredFields.includes(fieldName);
+
+  // Helper function to get field validation class
+  const getFieldValidationClass = (fieldName) => {
+    const isRequired = isFieldRequired(fieldName);
+    const isEmpty = !form[fieldName] || (typeof form[fieldName] === 'string' && form[fieldName].trim() === '');
+    const hasError = isRequired && isEmpty;
+    
+    return hasError 
+      ? 'border-red-300 focus:ring-red-500 focus:border-red-500' 
+      : 'border-gray-300 focus:ring-green-500 focus:border-green-500';
+  };
   // Safety check: if verification is not approved, don't render the form
   if (form.verification_status !== 'approved') {
     return (
@@ -995,13 +1196,50 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
+    {/* Reminder Notice */}
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6 w-full shadow">
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0">
+          <AlertCircle className="w-6 h-6 text-blue-500" />
+        </div>
+        <div className="flex-1">
+          <h3 className="text-lg font-bold text-blue-800 mb-2">Profile Completion Reminder</h3>
+          <p className="text-blue-700 font-medium mb-3">
+            Please complete all required fields in your profile. Personal Information must be fully filled out except Middle Name and Suffix.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-600">
+            <div>
+              <p className="font-semibold mb-1">Required Sections:</p>
+              <ul className="list-disc ml-4 space-y-1">
+                <li>Personal Information (except Middle Name & Suffix)</li>
+                <li>Address Information (except Housing Type)</li>
+                <li>Education & Employment (except Business fields)</li>
+                <li>Voter Information (all fields)</li>
+                <li>Profile Photo</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold mb-1">Optional Fields:</p>
+              <ul className="list-disc ml-4 space-y-1">
+                <li>Middle Name & Name Suffix</li>
+                <li>Housing Type</li>
+                <li>Business Information fields</li>
+                <li>Special Categories</li>
+                <li>COVID Vaccination</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     {/* Missing Fields Warning */}
     {missingFields.length > 0 && (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-center gap-3 w-full shadow">
-        <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-center gap-3 w-full shadow">
+        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
         <div className="flex-1">
-          <p className="text-yellow-800 font-medium">Please complete all required fields to finish your profile:</p>
-          <ul className="list-disc ml-6 text-yellow-700 text-sm mt-2">
+          <p className="text-red-800 font-medium">Please complete all required fields to finish your profile:</p>
+          <ul className="list-disc ml-6 text-red-700 text-sm mt-2">
             {missingFields.map(field => (
               <li key={field}>{fieldLabels[field] || field}</li>
             ))}
@@ -1009,10 +1247,54 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
         </div>
       </div>
     )}
+
+    {/* Mobile Number Validation Warning */}
+    {!isMobileNumberValid && form.mobile_number && (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-center gap-3 w-full shadow">
+        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="text-red-800 font-medium">Invalid mobile number format:</p>
+          <p className="text-red-700 text-sm mt-1">
+            Mobile number must be exactly 11 digits and start with "09" (e.g., 09123456789)
+          </p>
+        </div>
+      </div>
+    )}
+
+    {/* Birth Date Validation Warning */}
+    {!isBirthDateValid && form.birth_date && (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-center gap-3 w-full shadow">
+        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="text-red-800 font-medium">Invalid birth date:</p>
+          <p className="text-red-700 text-sm mt-1">
+            Birth date must be in the past (not today or future)
+          </p>
+        </div>
+      </div>
+    )}
+
+    {/* Years in Barangay Validation Warning */}
+    {!isYearsInBarangayValid && form.years_in_barangay && (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-center gap-3 w-full shadow">
+        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="text-red-800 font-medium">Invalid years in barangay:</p>
+          <p className="text-red-700 text-sm mt-1">
+            Years in barangay must be between 0 and {maxYearsInBarangay}
+            {currentAge > 0 && ` (cannot exceed your current age of ${currentAge})`}
+          </p>
+        </div>
+      </div>
+    )}
     
     {/* Profile Picture Section */}
-    <div className="flex flex-col items-center w-full">
-      <div className="w-full bg-green-50 rounded-xl flex flex-col items-center py-10 mb-8 shadow-sm">
+    <div className="flex flex-col items-center w-full" data-photo-section>
+      <div className={`w-full rounded-xl flex flex-col items-center py-10 mb-8 shadow-sm ${
+        isFieldRequired('current_photo') && !form.current_photo 
+          ? 'bg-red-50 border-2 border-red-200' 
+          : 'bg-green-50'
+      }`}>
         <div className="relative mb-6">
           {form.current_photo ? (
             <img
@@ -1020,11 +1302,34 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
                 ? `http://localhost:8000/storage/${form.current_photo}?t=${Date.now()}`
                 : URL.createObjectURL(form.current_photo)}
               alt="Profile Photo"
-              className="w-32 h-32 object-cover rounded-full border-4 border-green-400 shadow-lg"
+              className={`w-32 h-32 object-cover rounded-full border-4 shadow-lg ${
+                isFieldRequired('current_photo') && !form.current_photo 
+                  ? 'border-red-400' 
+                  : 'border-green-400'
+              }`}
             />
           ) : (
-            <div className="w-32 h-32 bg-green-100 rounded-full border-4 border-green-300 flex items-center justify-center">
-              <ImageIcon className="w-14 h-14 text-green-400" />
+            <div className={`w-32 h-32 rounded-full border-4 flex items-center justify-center ${
+              isFieldRequired('current_photo') && !form.current_photo 
+                ? 'bg-red-100 border-red-300' 
+                : 'bg-green-100 border-green-300'
+            }`}>
+              <ImageIcon className={`w-14 h-14 ${
+                isFieldRequired('current_photo') && !form.current_photo 
+                  ? 'text-red-400' 
+                  : 'text-green-400'
+              }`} />
+            </div>
+          )}
+        </div>
+        <div className="text-center mb-4">
+          <label className="text-sm font-semibold text-gray-700">
+            Profile Photo
+            {isFieldRequired('current_photo') && <span className="text-red-500 ml-1">*</span>}
+          </label>
+          {isFieldRequired('current_photo') && !form.current_photo && (
+            <div className="text-xs text-red-600 mt-1">
+              This field is required
             </div>
           )}
         </div>
@@ -1035,6 +1340,7 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             onChange={handleChange}
             accept="image/*"
             className="hidden"
+            required={isFieldRequired('current_photo')}
           />
           <div className="flex items-center gap-3">
             <ImageIcon className="w-5 h-5" />
@@ -1048,40 +1354,97 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
 
     {/* Personal Information Section */}
     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-      <h3 className="text-xl font-bold text-green-800 mb-6 flex items-center gap-2">
-        <User className="w-5 h-5" />
-        Personal Information
-      </h3>
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-bold text-green-800 flex items-center gap-2">
+          <User className="w-5 h-5" />
+          Personal Information
+        </h3>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+          <p className="text-xs text-blue-700 font-medium">
+            💡 You can correct any misspelled names from registration
+          </p>
+        </div>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {['first_name', 'middle_name', 'last_name', 'name_suffix'].map(name => (
-          <div key={name} className="space-y-2">
-            <label className="text-sm font-semibold text-gray-700 tracking-wide">
-              {name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-            </label>
-            <input
-              type="text"
-              name={name}
-              value={form[name] ?? ''}
-              onChange={handleChange}
-              placeholder={`Enter ${name.replace(/_/g, ' ')}`}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
-            />
-          </div>
-        ))}
+        {['first_name', 'middle_name', 'last_name', 'name_suffix'].map(name => {
+          const isRequired = isFieldRequired(name);
+          return (
+            <div key={name} className="space-y-2">
+              <label className="text-sm font-semibold text-gray-700 tracking-wide">
+                {name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                {isRequired ? (
+                  <span className="text-red-500 ml-1">*</span>
+                ) : (
+                  <span className="text-gray-400 ml-1 text-xs">(Optional)</span>
+                )}
+              </label>
+              {name === 'name_suffix' ? (
+                <select
+                  name={name}
+                  value={form[name] ?? 'none'}
+                  onChange={handleChange}
+                  className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass(name)}`}
+                >
+                  <option value="none">None</option>
+                  <option value="Jr.">Jr.</option>
+                  <option value="Sr.">Sr.</option>
+                  <option value="II">II</option>
+                  <option value="III">III</option>
+                  <option value="IV">IV</option>
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  name={name}
+                  value={form[name] ?? ''}
+                  onChange={handleChange}
+                  placeholder={`Enter ${name.replace(/_/g, ' ')}`}
+                  className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass(name)}`}
+                  required={isRequired}
+                />
+              )}
+              {name === 'name_suffix' && (
+                <div className="text-xs text-gray-500 mt-1">
+                  Select from: None, Jr., Sr., II, III, IV
+                </div>
+              )}
+              {isRequired && !form[name] && (
+                <div className="text-xs text-red-600 mt-1">
+                  This field is required
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Birth Date</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Birth Date
+            {isFieldRequired('birth_date') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <input
             type="date"
             name="birth_date"
             value={form.birth_date || ''}
             onChange={handleChange}
-            max={new Date().toISOString().split('T')[0]}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            max={new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('birth_date')}`}
+            title="Birth date must be in the past (not today or future)"
+            required={isFieldRequired('birth_date')}
           />
+          {form.birth_date && new Date(form.birth_date) >= new Date(new Date().setHours(0,0,0,0)) && (
+            <div className="text-xs text-red-600">
+              Birth date must be in the past (not today or future)
+            </div>
+          )}
+          {isFieldRequired('birth_date') && !form.birth_date && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
           {form.age && (
             <p className="text-xs text-green-600 font-medium">
               Age: <span className="font-bold">{form.age} years old</span>
@@ -1090,15 +1453,24 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Birth Place</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Birth Place
+            {isFieldRequired('birth_place') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <input
             type="text"
             name="birth_place"
             value={form.birth_place}
             onChange={handleChange}
             placeholder="Enter birth place"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('birth_place')}`}
+            required={isFieldRequired('birth_place')}
           />
+          {isFieldRequired('birth_place') && !form.birth_place && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -1115,53 +1487,94 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Email</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Email
+            {isFieldRequired('email') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <input
             type="email"
             name="email"
             value={form.email}
             onChange={handleChange}
             placeholder="Enter email address"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('email')}`}
+            required={isFieldRequired('email')}
           />
+          {isFieldRequired('email') && !form.email && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Mobile Number</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Mobile Number
+            {isFieldRequired('mobile_number') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <input
             type="tel"
             name="mobile_number"
             value={form.mobile_number}
             onChange={handleChange}
             placeholder="e.g. 09123456789"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            maxLength="11"
+            pattern="09[0-9]{9}"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('mobile_number')}`}
+            title="Please enter a valid 11-digit mobile number starting with 09"
+            required={isFieldRequired('mobile_number')}
           />
+          {form.mobile_number && !(form.mobile_number.length === 11 && form.mobile_number.startsWith('09') && /^09[0-9]{9}$/.test(form.mobile_number)) && (
+            <div className="text-xs">
+              <span className="text-red-600">
+                Mobile number must be 11 digits and start with 09
+              </span>
+            </div>
+          )}
+          {isFieldRequired('mobile_number') && !form.mobile_number && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Sex</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Sex
+            {isFieldRequired('sex') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <select
             name="sex"
             value={form.sex}
             onChange={handleChange}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('sex')}`}
+            required={isFieldRequired('sex')}
           >
             <option value="">Select Sex</option>
             <option value="Male">Male</option>
             <option value="Female">Female</option>
             <option value="Other">Other</option>
           </select>
+          {isFieldRequired('sex') && !form.sex && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Civil Status</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Civil Status
+            {isFieldRequired('civil_status') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <select
             name="civil_status"
             value={form.civil_status}
             onChange={handleChange}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('civil_status')}`}
+            required={isFieldRequired('civil_status')}
           >
             <option value="">Select Civil Status</option>
             <option value="Single">Single</option>
@@ -1169,30 +1582,77 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             <option value="Widow">Widow</option>
             <option value="Separated">Separated</option>
           </select>
+          {isFieldRequired('civil_status') && !form.civil_status && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Nationality</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Nationality
+            {isFieldRequired('nationality') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <input
             type="text"
             name="nationality"
             value={form.nationality}
             onChange={handleChange}
             placeholder="e.g. Filipino"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('nationality')}`}
+            required={isFieldRequired('nationality')}
           />
+          {isFieldRequired('nationality') && !form.nationality && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Religion</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Religion
+            {isFieldRequired('religion') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <input
             type="text"
             name="religion"
             value={form.religion}
             onChange={handleChange}
             placeholder="e.g. Roman Catholic"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('religion')}`}
+            required={isFieldRequired('religion')}
           />
+          {isFieldRequired('religion') && !form.religion && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Relation to Head field */}
+      <div className="mt-6">
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-gray-700">
+            Relation to the Head of the Family
+            {isFieldRequired('relation_to_head') && <span className="text-red-500 ml-1">*</span>}
+          </label>
+          <input
+            type="text"
+            name="relation_to_head"
+            value={form.relation_to_head || ''}
+            onChange={handleChange}
+            placeholder="e.g., Daughter, Son, Father, Self"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('relation_to_head')}`}
+            required={isFieldRequired('relation_to_head')}
+          />
+          {isFieldRequired('relation_to_head') && !form.relation_to_head && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1206,32 +1666,62 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
       
       <div className="space-y-6">
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Current Address</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Current Address
+            {isFieldRequired('current_address') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <textarea
             name="current_address"
             value={form.current_address}
             onChange={handleChange}
             rows={3}
             placeholder="e.g. Purok 2, Brgy. San Isidro, Sta. Maria, Bulacan"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md resize-none"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md resize-none ${getFieldValidationClass('current_address')}`}
+            required={isFieldRequired('current_address')}
           />
+          {isFieldRequired('current_address') && !form.current_address && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-gray-700">Years in Barangay</label>
+            <label className="text-sm font-semibold text-gray-700">
+              Years in Barangay
+              {isFieldRequired('years_in_barangay') && <span className="text-red-500 ml-1">*</span>}
+            </label>
             <input
               type="number"
               name="years_in_barangay"
               value={form.years_in_barangay ?? ''}
               onChange={handleChange}
               placeholder="e.g. 5"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+              min="0"
+              max={maxYearsInBarangay}
+              step="1"
+              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('years_in_barangay')}`}
+              required={isFieldRequired('years_in_barangay')}
             />
+            <div className="text-xs text-gray-500">
+              Enter number of years (0-{maxYearsInBarangay})
+              {currentAge > 0 && (
+                <span className="text-blue-600 font-medium"> • Cannot exceed your current age ({currentAge})</span>
+              )}
+            </div>
+            {isFieldRequired('years_in_barangay') && !form.years_in_barangay && (
+              <div className="text-xs text-red-600">
+                This field is required
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-gray-700">Housing Type</label>
+            <label className="text-sm font-semibold text-gray-700">
+              Housing Type
+              <span className="text-gray-400 ml-1 text-xs">(Optional)</span>
+            </label>
             <select
               name="housing_type"
               value={form.housing_type}
@@ -1249,16 +1739,6 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             </select>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-gray-700">Household Number</label>
-            <input
-              name="household_no"
-              value={form.household_no}
-              onChange={handleChange}
-              placeholder="e.g. 003124"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
-            />
-          </div>
         </div>
 
         <div className="flex items-center gap-6">
@@ -1297,12 +1777,16 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Classified Sector</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Classified Sector
+            {isFieldRequired('classified_sector') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <select
             name="classified_sector"
             value={form.classified_sector}
             onChange={handleChange}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('classified_sector')}`}
+            required={isFieldRequired('classified_sector')}
           >
             <option value="">Select Sector</option>
             <option>Labor Force/Employed</option>
@@ -1313,15 +1797,24 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             <option>Out-of-School Children (OSC)</option>
             <option>Not Applicable</option>
           </select>
+          {isFieldRequired('classified_sector') && !form.classified_sector && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Educational Attainment</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Educational Attainment
+            {isFieldRequired('educational_attainment') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <select
             name="educational_attainment"
             value={form.educational_attainment}
             onChange={handleChange}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('educational_attainment')}`}
+            required={isFieldRequired('educational_attainment')}
           >
             <option value="">Select Education</option>
             <option>Primary</option>
@@ -1330,15 +1823,24 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             <option>Post Graduate</option>
             <option>Not Applicable</option>
           </select>
+          {isFieldRequired('educational_attainment') && !form.educational_attainment && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Occupation Type</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Occupation Type
+            {isFieldRequired('occupation_type') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <select
             name="occupation_type"
             value={form.occupation_type}
             onChange={handleChange}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('occupation_type')}`}
+            required={isFieldRequired('occupation_type')}
           >
             <option value="">Select Occupation</option>
             <option>Managers</option>
@@ -1353,21 +1855,38 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             <option>Craft & Related Trades Workers</option>
             <option>Not Applicable</option>
           </select>
+          {isFieldRequired('occupation_type') && !form.occupation_type && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Salary/Income</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Salary/Income
+            {isFieldRequired('salary_income') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <input
             name="salary_income"
             value={form.salary_income}
             onChange={handleChange}
             placeholder="e.g. ₱15,000/month"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('salary_income')}`}
+            required={isFieldRequired('salary_income')}
           />
+          {isFieldRequired('salary_income') && !form.salary_income && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Business Info</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Business Info
+            <span className="text-gray-400 ml-1 text-xs">(Optional)</span>
+          </label>
           <input
             name="business_info"
             value={form.business_info}
@@ -1378,7 +1897,10 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Business Type</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Business Type
+            <span className="text-gray-400 ml-1 text-xs">(Optional)</span>
+          </label>
           <input
             name="business_type"
             value={form.business_type}
@@ -1391,7 +1913,10 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Business Location</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Business Location
+            <span className="text-gray-400 ml-1 text-xs">(Optional)</span>
+          </label>
           <input
             name="business_location"
             value={form.business_location}
@@ -1409,7 +1934,10 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             onChange={handleChange}
             className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
           />
-          <label className="text-sm font-semibold text-gray-700">Business Outside Barangay</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Business Outside Barangay
+            <span className="text-gray-400 ml-1 text-xs">(Optional)</span>
+          </label>
         </div>
       </div>
     </div>
@@ -1423,40 +1951,67 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Voter Status</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Voter Status
+            {isFieldRequired('voter_status') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <select
             name="voter_status"
             value={form.voter_status}
             onChange={handleChange}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('voter_status')}`}
+            required={isFieldRequired('voter_status')}
           >
             <option value="">Select Voter Status</option>
             <option>Local (Barangay)</option>
             <option>Local (City/Municipality)</option>
             <option>Non-Local</option>
           </select>
+          {isFieldRequired('voter_status') && !form.voter_status && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Voter's ID Number</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Voter's ID Number
+            {isFieldRequired('voters_id_number') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <input
             name="voters_id_number"
             value={form.voters_id_number}
             onChange={handleChange}
             placeholder="e.g. 1234-5678-9012"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('voters_id_number')}`}
+            required={isFieldRequired('voters_id_number')}
           />
+          {isFieldRequired('voters_id_number') && !form.voters_id_number && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Voting Location</label>
+          <label className="text-sm font-semibold text-gray-700">
+            Voting Location
+            {isFieldRequired('voting_location') && <span className="text-red-500 ml-1">*</span>}
+          </label>
           <input
             name="voting_location"
             value={form.voting_location}
             onChange={handleChange}
             placeholder="e.g. Barangay Hall, Zone 3"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('voting_location')}`}
+            required={isFieldRequired('voting_location')}
           />
+          {isFieldRequired('voting_location') && !form.voting_location && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1465,12 +2020,12 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
       <h3 className="text-xl font-bold text-green-800 mb-6 flex items-center gap-2">
         ⚠️ Special Categories
+        <span className="text-gray-400 ml-2 text-sm font-normal">(Optional)</span>
       </h3>
       
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {[
-          'Solo Parent', 'Solo Parent w/ ID', 'Senior Citizen', 'Senior Citizen w/ ID',
-          'Senior Citizen w/ Pension', 'Indigenous people', "4P's Member", 'PWD', 'PWD w/ ID'
+          'Solo Parent', 'Senior Citizen', 'Indigenous people', "4P's Member", 'PWD'
         ].map(cat => (
           <label key={cat} className="flex items-center space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-green-50 hover:border-green-300 transition-all duration-200 cursor-pointer">
             <input
@@ -1491,6 +2046,7 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
       <h3 className="text-xl font-bold text-green-800 mb-6 flex items-center gap-2">
         💉 COVID Vaccination
+        <span className="text-gray-400 ml-2 text-sm font-normal">(Optional)</span>
       </h3>
       
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
@@ -1500,12 +2056,12 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
         ].map(vac => (
           <label key={vac} className="flex items-center space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-green-50 hover:border-green-300 transition-all duration-200 cursor-pointer">
             <input
-              type="checkbox"
-              name="vaccine_received"
+              type="radio"
+              name="covid_vaccine_status"
               value={vac}
-              checked={form.vaccine_received.includes(vac)}
+              checked={form.covid_vaccine_status === vac}
               onChange={handleChange}
-              className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+              className="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500"
             />
             <span className="text-sm text-gray-700 font-medium">{vac}</span>
           </label>

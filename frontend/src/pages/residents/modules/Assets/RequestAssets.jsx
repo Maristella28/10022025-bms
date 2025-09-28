@@ -191,76 +191,93 @@ const RequestAssets = () => {
     <>
       <Navbares />
       <Sidebares />
-      <main className="bg-gradient-to-br from-green-50 to-white min-h-screen ml-64 pt-36 px-6 pb-16 font-sans">
-        <div className="w-full max-w-7xl mx-auto space-y-8">
+      <main className="bg-gradient-to-br from-slate-50 via-blue-50 to-emerald-50 min-h-screen ml-64 pt-36 px-6 pb-16 font-sans relative overflow-hidden">
+        {/* Animated background elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-emerald-200/30 to-blue-200/30 rounded-full blur-3xl animate-float"></div>
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-br from-purple-200/30 to-pink-200/30 rounded-full blur-3xl animate-float-delayed"></div>
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-br from-yellow-200/20 to-orange-200/20 rounded-full blur-3xl animate-pulse-slow"></div>
+        </div>
+
+        <div className="w-full max-w-7xl mx-auto space-y-8 relative z-10">
           {/* Enhanced Header */}
-          <div className="text-center space-y-4">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full shadow-xl mb-4">
-              <ShoppingBagIcon className="w-10 h-10 text-white" />
+          <div className="text-center space-y-6">
+            <div className="relative inline-flex items-center justify-center mb-6">
+              <div className="absolute inset-0 bg-gradient-to-r from-green-400 via-emerald-500 to-blue-600 rounded-full blur-xl opacity-30 animate-pulse-slow"></div>
+              <div className="relative w-24 h-24 bg-gradient-to-br from-green-500 via-emerald-500 to-blue-600 rounded-full shadow-2xl flex items-center justify-center transform hover:scale-110 transition-all duration-300">
+                <ShoppingBagIcon className="w-12 h-12 text-white drop-shadow-lg" />
+              </div>
             </div>
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent tracking-tight">
+            <h1 className="text-5xl md:text-6xl font-black bg-gradient-to-r from-green-600 via-emerald-600 to-blue-600 bg-clip-text text-transparent tracking-tight leading-tight mb-4">
               Request Barangay Assets
             </h1>
-            <p className="text-gray-600 text-lg max-w-2xl mx-auto leading-relaxed">
+            <p className="text-gray-600 text-lg max-w-3xl mx-auto leading-relaxed font-medium">
               Browse and request available barangay assets for your community events and activities.
+              <span className="text-emerald-600 font-semibold"> Discover what's available for your next project.</span>
             </p>
           </div>
 
           {/* Enhanced Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatCard
               label="Total Assets"
               value={assets.length}
-              icon={<ShoppingBagIcon className="w-6 h-6 text-green-600" />}
-              iconBg="bg-green-100"
+              icon={<ShoppingBagIcon className="w-6 h-6 text-white" />}
+              iconBg="bg-gradient-to-br from-green-500 to-emerald-600"
+              gradient="from-green-500 to-emerald-600"
             />
             <StatCard
               label="In Stock"
               value={getStatusCount('In Stock')}
-              icon={<CheckCircleIcon className="w-6 h-6 text-emerald-600" />}
-              iconBg="bg-emerald-100"
+              icon={<CheckCircleIcon className="w-6 h-6 text-white" />}
+              iconBg="bg-gradient-to-br from-emerald-500 to-green-600"
+              gradient="from-emerald-500 to-green-600"
             />
             <StatCard
               label="Limited Stock"
               value={getStatusCount('Limited')}
-              icon={<ExclamationTriangleIcon className="w-6 h-6 text-yellow-600" />}
-              iconBg="bg-yellow-100"
+              icon={<ExclamationTriangleIcon className="w-6 h-6 text-white" />}
+              iconBg="bg-gradient-to-br from-yellow-500 to-orange-500"
+              gradient="from-yellow-500 to-orange-500"
             />
             <StatCard
               label="Available"
               value={getStatusCount('Available')}
-              icon={<ClockIcon className="w-6 h-6 text-blue-600" />}
-              iconBg="bg-blue-100"
+              icon={<ClockIcon className="w-6 h-6 text-white" />}
+              iconBg="bg-gradient-to-br from-blue-500 to-indigo-600"
+              gradient="from-blue-500 to-indigo-600"
             />
           </div>
 
           {/* Enhanced Controls Section */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 mb-8">
+          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-2xl border border-white/50 p-8 mb-8">
             <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
               <Link to="/residents/statusassetrequests">
-                <button className="flex items-center gap-3 px-8 py-3 font-semibold rounded-xl shadow-lg transition-all duration-300 transform hover:scale-105 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white">
-                  <EyeIcon className="w-5 h-5" />
-                  View Request Status
+                <button className="group flex items-center gap-3 px-8 py-4 font-bold rounded-2xl shadow-xl transition-all duration-300 transform hover:scale-105 bg-gradient-to-r from-green-600 via-emerald-600 to-blue-600 hover:from-green-700 hover:via-emerald-700 hover:to-blue-700 text-white border-2 border-green-400 hover:border-green-300 relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <EyeIcon className="w-6 h-6 relative z-10" />
+                  <span className="relative z-10">View Request Status</span>
+                  <div className="absolute -right-2 -top-2 w-4 h-4 bg-yellow-400 rounded-full animate-pulse"></div>
                 </button>
               </Link>
 
               {/* Enhanced Search and Filters */}
-              <div className="flex flex-col sm:flex-row gap-4 items-center w-full max-w-2xl">
+              <div className="flex flex-col sm:flex-row gap-4 items-center w-full max-w-3xl">
                 <div className="relative flex-grow">
                   <input
                     type="text"
-                    placeholder="Search assets..."
+                    placeholder="Search assets by name or description..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3 border border-gray-200 focus:ring-2 focus:ring-green-500 focus:border-transparent rounded-xl text-sm shadow-sm transition-all duration-300"
+                    className="w-full pl-12 pr-4 py-4 border-2 border-gray-200 focus:ring-4 focus:ring-green-500/20 focus:border-green-500 rounded-2xl text-sm shadow-lg transition-all duration-300 bg-white/90 backdrop-blur-sm"
                   />
-                  <ShoppingBagIcon className="w-5 h-5 absolute left-4 top-3.5 text-gray-400" />
+                  <ShoppingBagIcon className="w-6 h-6 absolute left-4 top-4 text-gray-400" />
                 </div>
                 
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="px-4 py-3 border border-gray-200 focus:ring-2 focus:ring-green-500 focus:border-transparent rounded-xl text-sm shadow-sm transition-all duration-300"
+                  className="px-6 py-4 border-2 border-gray-200 focus:ring-4 focus:ring-green-500/20 focus:border-green-500 rounded-2xl text-sm shadow-lg transition-all duration-300 bg-white/90 backdrop-blur-sm font-medium"
                 >
                   {categories.map(category => (
                     <option key={category} value={category}>{category}</option>
@@ -270,7 +287,7 @@ const RequestAssets = () => {
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="px-4 py-3 border border-gray-200 focus:ring-2 focus:ring-green-500 focus:border-transparent rounded-xl text-sm shadow-sm transition-all duration-300"
+                  className="px-6 py-4 border-2 border-gray-200 focus:ring-4 focus:ring-green-500/20 focus:border-green-500 rounded-2xl text-sm shadow-lg transition-all duration-300 bg-white/90 backdrop-blur-sm font-medium"
                 >
                   <option value="name">Sort by Name</option>
                   <option value="price-low">Price: Low to High</option>
@@ -283,96 +300,166 @@ const RequestAssets = () => {
 
           {/* Cart Section */}
           {cart.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 mb-8">
-              <h2 className="text-xl font-bold mb-4 text-green-700 flex items-center gap-2">
-                <ShoppingBagIcon className="w-6 h-6" /> Request Cart
-              </h2>
-              <ul className="divide-y divide-gray-100">
+            <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl border border-white/50 p-8 mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-green-700 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+                    <ShoppingBagIcon className="w-6 h-6 text-white" />
+                  </div>
+                  Request Cart ({cart.length} items)
+                </h2>
+                <div className="text-sm text-gray-500 font-medium">
+                  Ready to submit
+                </div>
+              </div>
+              <div className="space-y-4">
                 {cart.map((item, idx) => (
-                  <li key={idx} className="flex items-center justify-between py-3">
-                    <div className="flex items-center gap-4">
-                      <img src={item.asset.image && item.asset.image.startsWith('/storage/') ? `http://localhost:8000${item.asset.image}` : item.asset.image} alt={item.asset.name} className="w-12 h-12 rounded-lg object-cover border" loading="lazy" />
-                      <div>
-                        <div className="font-semibold text-gray-900">{item.asset.name}</div>
-                        <div className="text-sm text-gray-500">Date: {item.requestDate}</div>
-                        <div className="text-sm text-gray-500">Qty: {item.quantity}</div>
+                  <div key={idx} className="group bg-gradient-to-r from-gray-50 to-white rounded-2xl p-4 border border-gray-200 hover:border-green-300 transition-all duration-300 hover:shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="relative">
+                          <img 
+                            src={item.asset.image && item.asset.image.startsWith('/storage/') ? `http://localhost:8000${item.asset.image}` : item.asset.image} 
+                            alt={item.asset.name} 
+                            className="w-16 h-16 rounded-xl object-cover border-2 border-gray-200 group-hover:border-green-300 transition-colors duration-300" 
+                            loading="lazy" 
+                          />
+                          <div className="absolute -top-2 -right-2 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                            {item.quantity}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-bold text-gray-900 text-lg">{item.asset.name}</div>
+                          <div className="text-sm text-gray-500 flex items-center gap-4">
+                            <span className="flex items-center gap-1">
+                              <CalendarIcon className="w-4 h-4" />
+                              {item.requestDate}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <CurrencyDollarIcon className="w-4 h-4" />
+                              ₱{(item.asset.price * item.quantity).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
                       </div>
+                      <button 
+                        onClick={() => removeFromCart(idx)} 
+                        className="p-3 rounded-full hover:bg-red-100 transition-all duration-300 group-hover:scale-110"
+                      >
+                        <TrashIcon className="w-5 h-5 text-red-500" />
+                      </button>
                     </div>
-                    <button onClick={() => removeFromCart(idx)} className="p-2 rounded-full hover:bg-red-100 transition">
-                      <TrashIcon className="w-5 h-5 text-red-500" />
-                    </button>
-                  </li>
+                  </div>
                 ))}
-              </ul>
-              <button
-                onClick={handleSubmitCart}
-                disabled={submitting}
-                className="mt-6 w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2"
-              >
-                {submitting ? 'Submitting...' : 'Submit All Requests'}
-              </button>
-              {error && <div className="mt-2 text-red-600 font-medium">{error}</div>}
-              {success && <div className="mt-2 text-green-600 font-medium">{success}</div>}
+              </div>
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="text-lg font-semibold text-gray-700">
+                    Total: ₱{cart.reduce((sum, item) => sum + (item.asset.price * item.quantity), 0).toFixed(2)}
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {cart.length} item{cart.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
+                <button
+                  onClick={handleSubmitCart}
+                  disabled={submitting}
+                  className="group w-full bg-gradient-to-r from-green-600 via-emerald-600 to-blue-600 hover:from-green-700 hover:via-emerald-700 hover:to-blue-700 text-white font-bold py-4 px-6 rounded-2xl shadow-xl transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-3 border-2 border-green-400 hover:border-green-300 relative overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  {submitting ? (
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white relative z-10"></div>
+                  ) : (
+                    <ShoppingBagIcon className="w-6 h-6 relative z-10" />
+                  )}
+                  <span className="relative z-10">
+                    {submitting ? 'Submitting...' : 'Submit All Requests'}
+                  </span>
+                  <div className="absolute -right-2 -top-2 w-4 h-4 bg-yellow-400 rounded-full animate-pulse"></div>
+                </button>
+                {error && (
+                  <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl font-medium flex items-center gap-2">
+                    <ExclamationTriangleIcon className="w-5 h-5" />
+                    {error}
+                  </div>
+                )}
+                {success && (
+                  <div className="mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl font-medium flex items-center gap-2">
+                    <CheckCircleIcon className="w-5 h-5" />
+                    {success}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {/* Asset Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {loading ? (
-              // Loading skeleton
+              // Enhanced loading skeleton
               [...Array(8)].map((_, i) => (
-                <div key={i} className="bg-white border border-gray-200 rounded-2xl shadow-lg overflow-hidden animate-pulse">
-                  <div className="h-48 bg-gray-300"></div>
+                <div key={i} className="bg-white/80 backdrop-blur-sm border border-gray-200 rounded-3xl shadow-xl overflow-hidden animate-pulse">
+                  <div className="h-56 bg-gradient-to-br from-gray-200 to-gray-300"></div>
                   <div className="p-6 space-y-4">
-                    <div className="h-6 bg-gray-300 rounded w-3/4"></div>
-                    <div className="h-4 bg-gray-300 rounded w-full"></div>
-                    <div className="h-4 bg-gray-300 rounded w-2/3"></div>
+                    <div className="h-6 bg-gray-300 rounded-xl w-3/4"></div>
+                    <div className="h-4 bg-gray-300 rounded-lg w-full"></div>
+                    <div className="h-4 bg-gray-300 rounded-lg w-2/3"></div>
                     <div className="flex items-center justify-between">
-                      <div className="h-8 bg-gray-300 rounded w-1/3"></div>
-                      <div className="h-6 bg-gray-300 rounded w-1/4"></div>
+                      <div className="h-8 bg-gray-300 rounded-lg w-1/3"></div>
+                      <div className="h-6 bg-gray-300 rounded-lg w-1/4"></div>
                     </div>
-                    <div className="h-10 bg-gray-300 rounded w-full"></div>
+                    <div className="h-12 bg-gray-300 rounded-2xl w-full"></div>
                   </div>
                 </div>
               ))
             ) : sortedAssets.length === 0 ? (
-              <div className="col-span-full text-center py-12">
-                <div className="flex flex-col items-center gap-3">
-                  <ShoppingBagIcon className="w-16 h-16 text-gray-300" />
-                  <p className="text-gray-500 font-medium text-lg">No assets found</p>
-                  <p className="text-gray-400 text-sm">Try adjusting your search or filters</p>
+              <div className="col-span-full text-center py-16">
+                <div className="flex flex-col items-center gap-6">
+                  <div className="w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center">
+                    <ShoppingBagIcon className="w-12 h-12 text-gray-400" />
+                  </div>
+                  <div>
+                    <p className="text-gray-500 font-bold text-xl mb-2">No assets found</p>
+                    <p className="text-gray-400 text-sm">Try adjusting your search or filters to find what you're looking for</p>
+                  </div>
                 </div>
               </div>
             ) : (
               sortedAssets.map((item) => (
                 <div
                   key={item.id}
-                  className="bg-white border border-gray-200 rounded-2xl shadow-lg hover:shadow-2xl transform hover:-translate-y-2 transition-all duration-300 overflow-hidden group cursor-pointer"
+                  className="group bg-white/90 backdrop-blur-sm border border-gray-200 rounded-3xl shadow-xl hover:shadow-2xl transform hover:-translate-y-3 transition-all duration-500 overflow-hidden cursor-pointer"
                   onClick={() => openDetailModal(item.id)}
                 >
                   {/* Image Section */}
-                  <div className="relative h-48 bg-gray-100 overflow-hidden">
+                  <div className="relative h-56 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
                     <img
                       src={item.image && item.image.startsWith('/storage/') ? `http://localhost:8000${item.image}` : item.image}
                       alt={item.name}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-in-out"
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
                       loading="lazy"
                     />
-                    <div className="absolute top-3 left-3">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    <div className="absolute top-4 left-4">
                       {badge(item.availability || 'Available', getAvailabilityColor(item.availability || 'Available'), getAvailabilityIcon(item.availability || 'Available'))}
                     </div>
-                    <div className="absolute top-3 right-3">
+                    <div className="absolute top-4 right-4">
                       {badge(item.category, 'bg-blue-100 text-blue-800', <TagIcon className="w-3 h-3" />)}
+                    </div>
+                    <div className="absolute bottom-4 left-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <div className="bg-white/90 backdrop-blur-sm rounded-xl p-3">
+                        <p className="text-sm font-medium text-gray-800">Click to view details</p>
+                      </div>
                     </div>
                   </div>
 
                   {/* Content Section */}
-                  <div className="p-6 space-y-4">
+                  <div className="p-6 space-y-5">
                     <div>
-                      <h3 className="text-lg font-bold text-gray-900 group-hover:text-green-600 transition-colors line-clamp-1">
+                      <h3 className="text-xl font-bold text-gray-900 group-hover:text-green-600 transition-colors line-clamp-1 mb-2">
                         {item.name}
                       </h3>
-                      <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                      <p className="text-sm text-gray-600 line-clamp-2 leading-relaxed">
                         {item.description}
                       </p>
                     </div>
@@ -391,29 +478,31 @@ const RequestAssets = () => {
                           </svg>
                         ))}
                       </div>
-                      <span className="text-sm text-gray-600">({item.reviews || 0} reviews)</span>
+                      <span className="text-sm text-gray-600 font-medium">({item.reviews || 0} reviews)</span>
                     </div>
 
                     {/* Price and Date */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <CurrencyDollarIcon className="w-5 h-5 text-green-600" />
+                        <CurrencyDollarIcon className="w-6 h-6 text-green-600" />
                         <span className="text-2xl font-bold text-green-600">₱{item.price && !isNaN(Number(item.price)) ? Number(item.price).toFixed(2) : '0.00'}</span>
                       </div>
                       <div className="flex items-center gap-1 text-sm text-gray-500">
                         <CalendarIcon className="w-4 h-4" />
-                        <span>{item.date || ''}</span>
+                        <span className="font-medium">{item.date || ''}</span>
                       </div>
                     </div>
 
                     {/* Action Button */}
                     <button
                       onClick={e => { e.stopPropagation(); openRequestModal(item); }}
-                      className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2"
+                      className="group/btn w-full bg-gradient-to-r from-green-600 via-emerald-600 to-blue-600 hover:from-green-700 hover:via-emerald-700 hover:to-blue-700 text-white font-bold py-4 px-6 rounded-2xl shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-3 border-2 border-green-400 hover:border-green-300 relative overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
                       disabled={item.stock < 1}
                     >
-                      <ShoppingBagIcon className="w-5 h-5" />
-                      Request Now
+                      <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+                      <ShoppingBagIcon className="w-5 h-5 relative z-10" />
+                      <span className="relative z-10">Request Now</span>
+                      <div className="absolute -right-2 -top-2 w-4 h-4 bg-yellow-400 rounded-full animate-pulse"></div>
                     </button>
                   </div>
                 </div>
@@ -423,15 +512,31 @@ const RequestAssets = () => {
         </div>
       </main>
 
+      {/* CSS Animations */}
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-20px) rotate(5deg); }
+        }
+        @keyframes float-delayed {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-15px) rotate(-3deg); }
+        }
+        @keyframes pulse-slow {
+          0%, 100% { opacity: 0.2; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(1.05); }
+        }
+        .animate-float { animation: float 6s ease-in-out infinite; }
+        .animate-float-delayed { animation: float-delayed 8s ease-in-out infinite; }
+        .animate-pulse-slow { animation: pulse-slow 4s ease-in-out infinite; }
+      `}</style>
+
       {/* Asset Detail Modal */}
       {detailModal.open && detailModal.asset && (
         <Modal onClose={() => setDetailModal({ open: false, asset: null })}>
           <div className="max-w-lg w-full p-6">
-            <div className="flex justify-between items-center mb-4">
+            <div className="mb-6">
               <h2 className="text-2xl font-bold text-green-700">{detailModal.asset.name}</h2>
-              <button onClick={() => setDetailModal({ open: false, asset: null })} className="p-2 rounded-full hover:bg-gray-100">
-                <XMarkIcon className="w-6 h-6 text-gray-500" />
-              </button>
             </div>
             <img src={detailModal.asset.image && detailModal.asset.image.startsWith('/storage/') ? `http://localhost:8000${detailModal.asset.image}` : detailModal.asset.image} alt={detailModal.asset.name} className="w-full h-56 object-cover rounded-xl mb-4" loading="lazy" />
             <div className="mb-2 text-gray-700">{detailModal.asset.description}</div>
@@ -458,15 +563,8 @@ const RequestAssets = () => {
       {requestModal.open && requestModal.asset && (
         <Modal onClose={() => setRequestModal({ open: false, asset: null })}>
           <div className="max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
+            <div className="mb-6">
               <h2 className="text-xl font-bold text-green-700">Request: {requestModal.asset.name}</h2>
-              <button onClick={() => setRequestModal({ open: false, asset: null })} className="p-2 rounded-full hover:bg-gray-100">
-                <XMarkIcon className="w-6 h-6 text-gray-500" />
-              </button>
-            </div>
-            {/* DEBUG: Show available_dates */}
-            <div className="mb-2 text-xs text-gray-400">
-              Available Dates (debug): {JSON.stringify(requestModal.asset.available_dates)}
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Select Date</label>
@@ -531,13 +629,14 @@ const RequestAssets = () => {
   );
 };
 
-const StatCard = ({ label, value, icon, iconBg }) => (
-  <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 flex justify-between items-center group">
-    <div>
-      <p className="text-sm font-medium text-gray-600">{label}</p>
-      <p className="text-3xl font-bold text-green-600 group-hover:text-emerald-600 transition">{value}</p>
+const StatCard = ({ label, value, icon, iconBg, gradient }) => (
+  <div className="group bg-white/90 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-white/50 hover:shadow-2xl transition-all duration-500 flex justify-between items-center transform hover:-translate-y-2 relative overflow-hidden">
+    <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+    <div className="relative z-10">
+      <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">{label}</p>
+      <p className={`text-4xl font-black bg-gradient-to-r ${gradient} bg-clip-text text-transparent group-hover:scale-110 transition-transform duration-300`}>{value}</p>
     </div>
-    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${iconBg}`}>
+    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${iconBg} group-hover:scale-110 transition-transform duration-300 shadow-lg`}>
       {icon}
     </div>
   </div>

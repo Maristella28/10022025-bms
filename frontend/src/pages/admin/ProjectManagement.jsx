@@ -24,6 +24,8 @@ import {
   RocketLaunchIcon,
   TrophyIcon,
   ArrowPathIcon,
+  HandThumbUpIcon,
+  HandThumbDownIcon,
 } from "@heroicons/react/24/solid";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
@@ -48,6 +50,7 @@ const ProjectManagement = () => {
   const [openFeedbackProjectId, setOpenFeedbackProjectId] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
   const [showAllFeedbackProjectId, setShowAllFeedbackProjectId] = useState(null);
+  const [reactionCounts, setReactionCounts] = useState({}); // { [projectId]: { like: 0, dislike: 0 } }
 
   // Analytics and search state
   const [chartData, setChartData] = useState([]);
@@ -67,6 +70,15 @@ const ProjectManagement = () => {
     fetchProjects();
     fetchFeedbacks();
   }, []);
+
+  // Fetch reactions for each project when projects change
+  useEffect(() => {
+    if (projects.length > 0) {
+      projects.forEach(project => {
+        fetchReactionCounts(project.id);
+      });
+    }
+  }, [projects]);
 
   // Auto-refresh functionality
   useEffect(() => {
@@ -324,6 +336,17 @@ const ProjectManagement = () => {
       setFeedbacks(response.data);
     } catch (err) {
       console.error('Error fetching feedbacks:', err);
+    }
+  };
+
+  const fetchReactionCounts = async (projectId) => {
+    try {
+      const response = await axios.get(`/projects/${projectId}/reactions`);
+      setReactionCounts(prev => ({ ...prev, [projectId]: response.data }));
+    } catch (err) {
+      console.error('Error fetching reaction counts:', err);
+      // Set default values if fetch fails
+      setReactionCounts(prev => ({ ...prev, [projectId]: { like: 0, dislike: 0 } }));
     }
   };
 
@@ -714,7 +737,7 @@ const ProjectManagement = () => {
               </LineChart>
             </ResponsiveContainer>
 
-            <div className="mt-6">
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
                 <h4 className="text-sm font-semibold text-indigo-800 mb-2 flex items-center gap-2">
                   <PhotoIcon className="w-4 h-4" />
@@ -722,6 +745,27 @@ const ProjectManagement = () => {
                 </h4>
                 <p className="text-lg font-bold text-indigo-900">{getMostFrequentProject(selectedPeriod, selectedYear, selectedMonth).name || 'N/A'}</p>
                 <p className="text-sm text-indigo-700">{getMostFrequentProject(selectedPeriod, selectedYear, selectedMonth).count} feedbacks</p>
+              </div>
+              
+              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                <h4 className="text-sm font-semibold text-green-800 mb-2 flex items-center gap-2">
+                  <HandThumbUpIcon className="w-4 h-4" />
+                  Total Reactions {selectedPeriod === 'month' ? `(Month ${selectedMonth} ${selectedYear})` : selectedPeriod === 'year' ? `(${selectedYear})` : '(All Time)'}
+                </h4>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1">
+                    <HandThumbUpIcon className="w-4 h-4 text-blue-600" />
+                    <span className="text-lg font-bold text-blue-800">
+                      {Object.values(reactionCounts).reduce((sum, counts) => sum + (counts?.like || 0), 0)} Likes
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <HandThumbDownIcon className="w-4 h-4 text-red-600" />
+                    <span className="text-lg font-bold text-red-800">
+                      {Object.values(reactionCounts).reduce((sum, counts) => sum + (counts?.dislike || 0), 0)} Dislikes
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1015,6 +1059,7 @@ const ProjectManagement = () => {
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Owner</th>
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Deadline</th>
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Status</th>
+                    <th className="px-6 py-6 text-left font-bold text-gray-700">Reactions</th>
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Feedback</th>
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Actions</th>
                   </tr>
@@ -1023,7 +1068,7 @@ const ProjectManagement = () => {
                 <tbody className="divide-y divide-gray-100">
                   {loading ? (
                     <tr>
-                      <td colSpan="6" className="px-8 py-16 text-center">
+                      <td colSpan="7" className="px-8 py-16 text-center">
                         <div className="flex flex-col items-center gap-4">
                           <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                           <p className="text-gray-600 font-semibold text-lg">Loading projects...</p>
@@ -1033,7 +1078,7 @@ const ProjectManagement = () => {
                     </tr>
                   ) : filteredProjects.length === 0 ? (
                     <tr>
-                      <td colSpan="6" className="px-8 py-16 text-center">
+                      <td colSpan="7" className="px-8 py-16 text-center">
                         <div className="flex flex-col items-center gap-4">
                           <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center">
                             <DocumentTextIcon className="w-10 h-10 text-gray-400" />
@@ -1082,6 +1127,22 @@ const ProjectManagement = () => {
                             }`}>
                               {project.status}
                             </span>
+                          </td>
+                          <td className="px-6 py-6">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-1 bg-gradient-to-r from-blue-100 to-indigo-100 px-3 py-2 rounded-full border border-blue-200">
+                                <HandThumbUpIcon className="w-4 h-4 text-blue-600" />
+                                <span className="text-blue-800 font-bold text-sm">
+                                  {reactionCounts[project.id]?.like || 0}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 bg-gradient-to-r from-red-100 to-rose-100 px-3 py-2 rounded-full border border-red-200">
+                                <HandThumbDownIcon className="w-4 h-4 text-red-600" />
+                                <span className="text-red-800 font-bold text-sm">
+                                  {reactionCounts[project.id]?.dislike || 0}
+                                </span>
+                              </div>
+                            </div>
                           </td>
                           <td className="px-6 py-6 relative">
                             <button
@@ -1298,6 +1359,28 @@ const ProjectManagement = () => {
                   <p className="text-gray-700 leading-relaxed">{selectedProject.description}</p>
                 </div>
               )}
+              
+              {/* Reactions */}
+              <div className="flex items-center gap-3 bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <HandThumbUpIcon className="w-6 h-6 text-blue-600" />
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gray-700">Reactions:</span>
+                    <div className="flex items-center gap-1 bg-gradient-to-r from-blue-100 to-indigo-100 px-3 py-1 rounded-full border border-blue-200">
+                      <HandThumbUpIcon className="w-4 h-4 text-blue-600" />
+                      <span className="text-blue-800 font-bold text-sm">
+                        {reactionCounts[selectedProject.id]?.like || 0} Likes
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 bg-gradient-to-r from-red-100 to-rose-100 px-3 py-1 rounded-full border border-red-200">
+                      <HandThumbDownIcon className="w-4 h-4 text-red-600" />
+                      <span className="text-red-800 font-bold text-sm">
+                        {reactionCounts[selectedProject.id]?.dislike || 0} Dislikes
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
               
               {/* Created/Updated Date */}
               <div className="flex items-center gap-3 bg-white rounded-xl p-4 border border-gray-200 shadow-sm">

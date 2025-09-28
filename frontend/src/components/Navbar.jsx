@@ -80,8 +80,6 @@ const Navbar = () => {
               </div>
               <ul className="py-1 text-sm text-gray-700">
                 <DropdownItem icon="fa-tachometer-alt" label="Dashboard" />
-                <DropdownItem icon="fa-cog" label="Settings" />
-                <DropdownItem icon="fa-wallet" label="Earnings" />
                 <li>
                   <a
                     href="/admin/edit-profile"

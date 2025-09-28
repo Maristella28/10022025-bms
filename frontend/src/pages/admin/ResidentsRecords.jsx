@@ -109,10 +109,16 @@ const useApiCall = () => {
       const result = await apiCall(abortControllerRef.current.signal);
       return result;
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        setError(err.message || 'An error occurred');
-        throw err;
+      // Handle different types of errors
+      if (err.name === 'AbortError' || err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
+        // Request was cancelled, don't treat as error
+        console.log('Request was cancelled');
+        return null;
       }
+      
+      // For other errors, set error state and re-throw
+      setError(err.message || 'An error occurred');
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -426,6 +432,21 @@ const ResidentsRecords = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   
+  // Pagination state for Resident Records
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  
+  // Pagination state for User Accounts
+  const [usersCurrentPage, setUsersCurrentPage] = useState(1);
+  const [usersItemsPerPage, setUsersItemsPerPage] = useState(10);
+  const [usersTotalPages, setUsersTotalPages] = useState(1);
+  
+  // Pagination state for Deleted Records
+  const [deletedCurrentPage, setDeletedCurrentPage] = useState(1);
+  const [deletedItemsPerPage, setDeletedItemsPerPage] = useState(10);
+  const [deletedTotalPages, setDeletedTotalPages] = useState(1);
+  
   // Use custom hook for API calls
   const { execute: executeApiCall, loading: apiLoading, error: apiError } = useApiCall();
 
@@ -449,6 +470,11 @@ const ResidentsRecords = () => {
   const [recentlyDeletedLoading, setRecentlyDeletedLoading] = useState(false);
   const [showResidentsUsers, setShowResidentsUsers] = useState(false);
   const [showRecentlyDeleted, setShowRecentlyDeleted] = useState(false);
+  const [showResidentRecords, setShowResidentRecords] = useState(() => {
+    // Try to get from localStorage, default to true
+    const saved = localStorage.getItem('showResidentRecords');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
 
   // Modal and form state
   const [selectedResident, setSelectedResident] = useState(null);
@@ -515,7 +541,7 @@ const ResidentsRecords = () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
           },
           body: JSON.stringify({ 
             status,
@@ -626,6 +652,113 @@ const ResidentsRecords = () => {
     }
   };
 
+  // Pagination functions for Resident Records
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+  };
+
+  const handleItemsPerPageChange = (items) => {
+    setItemsPerPage(items);
+    setCurrentPage(1); // Reset to first page when changing items per page
+  };
+
+  // Pagination functions for User Accounts
+  const handleUsersPageChange = (page) => {
+    setUsersCurrentPage(page);
+  };
+
+  const handleUsersItemsPerPageChange = (items) => {
+    setUsersItemsPerPage(items);
+    setUsersCurrentPage(1);
+  };
+
+  // Pagination functions for Deleted Records
+  const handleDeletedPageChange = (page) => {
+    setDeletedCurrentPage(page);
+  };
+
+  const handleDeletedItemsPerPageChange = (items) => {
+    setDeletedItemsPerPage(items);
+    setDeletedCurrentPage(1);
+  };
+
+  // Get filtered and paginated residents
+  const getFilteredResidents = () => {
+    let filtered = residents;
+
+    // Apply search filter
+    if (search) {
+      filtered = filtered.filter(resident => 
+        resident.first_name?.toLowerCase().includes(search.toLowerCase()) ||
+        resident.last_name?.toLowerCase().includes(search.toLowerCase()) ||
+        resident.resident_id?.toLowerCase().includes(search.toLowerCase()) ||
+        resident.email?.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+
+    // Apply status filter
+    if (statusFilter) {
+      filtered = filtered.filter(resident => 
+        getResidentStatus(resident) === statusFilter
+      );
+    }
+
+    return filtered;
+  };
+
+  const getPaginatedResidents = () => {
+    const filtered = getFilteredResidents();
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filtered.slice(startIndex, endIndex);
+  };
+
+  // Get paginated users for User Accounts
+  const getPaginatedUsers = () => {
+    const startIndex = (usersCurrentPage - 1) * usersItemsPerPage;
+    const endIndex = startIndex + usersItemsPerPage;
+    return residentsUsers.slice(startIndex, endIndex);
+  };
+
+  // Get paginated deleted residents
+  const getPaginatedDeletedResidents = () => {
+    const startIndex = (deletedCurrentPage - 1) * deletedItemsPerPage;
+    const endIndex = startIndex + deletedItemsPerPage;
+    return recentlyDeletedResidents.slice(startIndex, endIndex);
+  };
+
+  // Update total pages when residents or filters change
+  useEffect(() => {
+    const filtered = getFilteredResidents();
+    const total = Math.ceil(filtered.length / itemsPerPage);
+    setTotalPages(total);
+    
+    // If current page is greater than total pages, reset to last page
+    if (currentPage > total && total > 0) {
+      setCurrentPage(total);
+    }
+  }, [residents, search, statusFilter, itemsPerPage, currentPage]);
+
+  // Update total pages for User Accounts
+  useEffect(() => {
+    const total = Math.ceil(residentsUsers.length / usersItemsPerPage);
+    setUsersTotalPages(total);
+    
+    if (usersCurrentPage > total && total > 0) {
+      setUsersCurrentPage(total);
+    }
+  }, [residentsUsers, usersItemsPerPage, usersCurrentPage]);
+
+  // Update total pages for Deleted Records
+  useEffect(() => {
+    const total = Math.ceil(recentlyDeletedResidents.length / deletedItemsPerPage);
+    setDeletedTotalPages(total);
+    
+    if (deletedCurrentPage > total && total > 0) {
+      setDeletedCurrentPage(total);
+    }
+  }, [recentlyDeletedResidents, deletedItemsPerPage, deletedCurrentPage]);
+
   const [selectedImageTitle, setSelectedImageTitle] = useState('');
   const [imageLoading, setImageLoading] = useState(false);
   // Toggle for showing/hiding report filters UI
@@ -647,7 +780,7 @@ const ResidentsRecords = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         },
         body: JSON.stringify({
           status: 'approved',
@@ -666,7 +799,7 @@ const ResidentsRecords = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         },
         body: JSON.stringify({
           verification_status: 'approved',
@@ -785,6 +918,11 @@ const ResidentsRecords = () => {
         return await axiosInstance.get("/admin/residents-list", { signal });
       });
       
+      // If request was cancelled, don't update state
+      if (!res) {
+        return;
+      }
+      
       const fetched = Array.isArray(res.data.residents) ? res.data.residents : [];
       
       // Validate and sanitize data
@@ -827,28 +965,10 @@ const ResidentsRecords = () => {
 
     const summaryStats = [
       {
-        label: 'Total Residents',
-        value: residents.length,
-        icon: <UserGroupIcon className="w-5 h-5 text-blue-600" />,
-        iconBg: 'bg-blue-50',
-      },
-      {
-        label: 'Active Voters',
-        value: analyticsData.voter.active,
-        icon: <CheckCircleIcon className="w-5 h-5 text-green-600" />,
-        iconBg: 'bg-green-100',
-      },
-      {
         label: 'Inactive Voters',
         value: analyticsData.voter.inactive,
         icon: <XCircleIcon className="w-5 h-5 text-gray-500" />,
         iconBg: 'bg-gray-100',
-      },
-      {
-        label: 'Adults',
-        value: analyticsData.age.adults,
-        icon: <UserIcon className="w-5 h-5 text-green-500" />,
-        iconBg: 'bg-green-100',
       },
     ];
 
@@ -1185,6 +1305,7 @@ const ResidentsRecords = () => {
 
   const handleSave = async () => {
     try {
+      console.log('ResidentsRecords: Starting save process with editData:', editData);
       const formData = new FormData();
       if (Array.isArray(editData.vaccine_received)) {
         let vaccines = [...editData.vaccine_received];
@@ -1199,41 +1320,63 @@ const ResidentsRecords = () => {
       const safeEditData = { ...editData, household_no: editData.household_no ?? "" };
       Object.entries(safeEditData).forEach(([key, value]) => {
         if (key === "vaccine_received" || key === "avatar") return;
+        
+        // Use the key as-is since backend validation expects mobile_number
+        let backendKey = key;
+        
         if (Array.isArray(value)) {
           value.forEach((item) => {
             if (item !== null && item !== "") {
-              formData.append(`${key}[]`, item);
+              formData.append(`${backendKey}[]`, item);
             }
           });
         } else if (typeof value === "boolean") {
-          formData.append(key, value ? "1" : "0");
+          formData.append(backendKey, value ? "1" : "0");
         } else if (value !== null && value !== undefined) {
-          formData.append(key, value);
+          formData.append(backendKey, value);
         }
       });
+      
+      // Handle avatar/photo upload - backend expects 'current_photo' field
       if (editData.avatar && editData.avatar instanceof File) {
-        formData.append('avatar', editData.avatar);
+        formData.append('current_photo', editData.avatar);
+        console.log('ResidentsRecords: Added avatar as current_photo to FormData');
+      } else if (editData.current_photo && editData.current_photo instanceof File) {
+        formData.append('current_photo', editData.current_photo);
+        console.log('ResidentsRecords: Added current_photo to FormData');
+      }
+      
+      // Debug: Log all FormData entries
+      console.log('ResidentsRecords: FormData contents:');
+      for (let [key, value] of formData.entries()) {
+        console.log(`${key}:`, value);
       }
       
       if (editData.id) {
-        await axiosInstance.post(
-          `/admin/residents/${editData.id}?_method=PUT`,
+        // Update existing resident profile
+        await axiosInstance.put(
+          `/admin/residents/${editData.id}`,
           formData,
           {
             headers: { "Content-Type": "multipart/form-data" },
           }
         );
-      } else if (editData.user_id) {
+      } else if (editData.user_id && !editData.id) {
+        // Create new resident profile for existing user
         const alreadyExists = await checkIfProfileExists(editData.user_id);
         if (alreadyExists) {
           showInfo("❌ This user already has a resident profile.", 'Create Profile', 'error');
           return;
         }
-        await axiosInstance.post(
+        console.log('ResidentsRecords: Sending POST request to /residents/complete-profile');
+        const response = await axiosInstance.post(
           "/residents/complete-profile",
           formData,
           { headers: { "Content-Type": "multipart/form-data" } }
         );
+        console.log('ResidentsRecords: API response:', response.data);
+      } else {
+        throw new Error("Invalid data: Missing resident ID or user ID");
       }
   showInfo("✅ Resident profile saved successfully.", 'Saved', 'success');
       setShowModal(false);
@@ -1300,15 +1443,36 @@ const ResidentsRecords = () => {
         throw new Error(response.data?.message || 'Failed to approve verification');
       }
 
-      // Step 2: Update local state immediately
+      console.log('Approval response:', response.data);
+
+      // Step 2: Update local state immediately for both profile and resident
       setResidentsUsers(prevUsers => 
         prevUsers.map(user => {
-          if (user.profile?.id === residentId) {
+          // Check if this user matches the approved resident/profile
+          const isMatchingUser = 
+            user.profile?.id === residentId || 
+            user.resident?.id === residentId ||
+            user.profile?.resident_id === residentId ||
+            user.resident?.profile_id === residentId;
+            
+          if (isMatchingUser) {
+            console.log('Updating user verification status:', {
+              email: user.email,
+              beforeProfileStatus: user.profile?.verification_status,
+              beforeResidentStatus: user.resident?.verification_status,
+              residentId: residentId
+            });
             return {
               ...user,
               profile: {
                 ...user.profile,
-                verification_status: 'approved'
+                verification_status: 'approved',
+                denial_reason: null
+              },
+              resident: {
+                ...user.resident,
+                verification_status: 'approved',
+                denial_reason: null
               }
             };
           }
@@ -1319,11 +1483,17 @@ const ResidentsRecords = () => {
       // Step 3: Show success message
       toast.success('Verification approved successfully. Resident can now complete their profile.');
       
-      // Step 4: Refresh all data
+      // Step 4: Refresh all data to ensure consistency
       await Promise.all([
         fetchResidents(),
         fetchResidentsUsers()
       ]);
+      
+      // Step 5: Force a small delay and refresh again to ensure data consistency
+      setTimeout(async () => {
+        await fetchResidentsUsers();
+      }, 1000);
+      
     } catch (err) {
       console.error('Failed to approve:', err);
       toast.error(err.message || 'Failed to approve verification');
@@ -1344,18 +1514,27 @@ const ResidentsRecords = () => {
       return;
     }
 
+    console.log('Denying verification for ID:', currentResidentId, 'with comment:', comment);
+
     try {
-      await axiosInstance.post(`/admin/residents/${currentResidentId}/deny-verification`, {
+      const response = await axiosInstance.post(`/admin/residents/${currentResidentId}/deny-verification`, {
         comment: comment
       });
-  showInfo("Residency verification denied successfully.", 'Denied', 'success');
+      
+      console.log('Denial response:', response.data);
+      showInfo("Residency verification denied successfully.", 'Denied', 'success');
       setShowCommentModal(false);
       // Refresh both datasets so admin tables reflect changes
       fetchResidents();
       fetchResidentsUsers();
     } catch (err) {
-  console.error("Failed to deny residency verification:", err);
-  showInfo("Failed to deny residency verification.", 'Error', 'error');
+      console.error("Failed to deny residency verification:", err);
+      console.error("Error details:", {
+        status: err.response?.status,
+        data: err.response?.data,
+        message: err.message
+      });
+      showInfo("Failed to deny residency verification.", 'Error', 'error');
     }
   };
 
@@ -1583,6 +1762,14 @@ const ResidentsRecords = () => {
     return 'Needs Verification';
   }
 
+  // Helper function to get the correct verification status from multiple sources
+  const getVerificationStatus = (user) => {
+    // Priority order: resident.verification_status > profile.verification_status > 'pending'
+    return user?.resident?.verification_status || 
+           user?.profile?.verification_status || 
+           'pending';
+  };
+
   // Generate chart data for monthly resident registrations
   const generateChartData = (residents, year = '', month = 0) => {
     const now = new Date();
@@ -1708,161 +1895,187 @@ const ResidentsRecords = () => {
   // UI controls for filter and sort
   const renderUIControls = () => {
     return (
-  <ErrorBoundary>
+      <ErrorBoundary>
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+        }
+        @keyframes float-delayed {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-8px); }
+        }
+        @keyframes float-slow {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-6px); }
+        }
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        .animate-float-delayed { animation: float-delayed 3s ease-in-out infinite 0.5s; }
+        .animate-float-slow { animation: float-slow 4s ease-in-out infinite 1s; }
+        .animate-shimmer { animation: shimmer 2s ease-in-out infinite; }
+        .animate-fade-in { animation: fadeIn 0.8s ease-out; }
+        .animate-fade-in-up { animation: fadeInUp 0.8s ease-out; }
+        .animate-slide-in-up { animation: slideInUp 0.8s ease-out; }
+        .animation-delay-300 { animation-delay: 0.3s; }
+        .animation-delay-500 { animation-delay: 0.5s; }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(30px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideInUp {
+          from { opacity: 0; transform: translateY(50px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
       <Navbar />
       <Sidebar />
       <main className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen ml-64 pt-36 px-6 pb-16 font-sans transition-all duration-300">
         <div className="w-full max-w-7xl mx-auto space-y-8">
           {/* Enhanced Header with Advanced Animations */}
-          <div className="text-center space-y-6 animate-fade-in">
+          <div className="text-center space-y-8 animate-fade-in relative">
+            {/* Floating background elements */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <div className="absolute top-10 left-10 w-20 h-20 bg-gradient-to-br from-indigo-400/20 to-purple-400/20 rounded-full blur-xl animate-float"></div>
+              <div className="absolute top-20 right-20 w-16 h-16 bg-gradient-to-br from-blue-400/20 to-cyan-400/20 rounded-full blur-lg animate-float-delayed"></div>
+              <div className="absolute bottom-10 left-1/4 w-12 h-12 bg-gradient-to-br from-pink-400/20 to-rose-400/20 rounded-full blur-md animate-float-slow"></div>
+            </div>
+
             <div className="relative">
-              <div className="inline-flex items-center justify-center w-28 h-28 bg-gradient-to-br from-indigo-600 via-purple-600 to-blue-700 rounded-3xl shadow-2xl mb-6 transform transition-all duration-700 hover:scale-110 hover:rotate-6 hover:shadow-3xl relative overflow-hidden">
+              <div className="inline-flex items-center justify-center w-32 h-32 bg-gradient-to-br from-indigo-600 via-purple-600 to-blue-700 rounded-3xl shadow-2xl mb-8 transform transition-all duration-700 hover:scale-110 hover:rotate-6 hover:shadow-3xl relative overflow-hidden group">
                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-3xl animate-pulse opacity-60"></div>
-                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent rounded-3xl"></div>
-                <UserIcon className="w-14 h-14 text-white relative z-10 drop-shadow-lg" />
+                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/30 to-transparent rounded-3xl group-hover:animate-spin"></div>
+                <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                <UserIcon className="w-16 h-16 text-white relative z-10 drop-shadow-lg group-hover:scale-110 transition-transform duration-300" />
               </div>
-              <div className="absolute -top-3 -right-3 w-10 h-10 bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 rounded-full flex items-center justify-center shadow-xl animate-bounce">
-                <SparklesIcon className="w-5 h-5 text-white drop-shadow-sm" />
+              <div className="absolute -top-4 -right-4 w-12 h-12 bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 rounded-full flex items-center justify-center shadow-xl animate-bounce">
+                <SparklesIcon className="w-6 h-6 text-white drop-shadow-sm" />
+              </div>
+              <div className="absolute -bottom-2 -left-2 w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center shadow-lg animate-pulse">
+                <CheckCircleIcon className="w-4 h-4 text-white" />
               </div>
             </div>
 
-            <div className="space-y-6">
-              <h1 className="text-7xl font-black bg-gradient-to-r from-indigo-700 via-purple-700 to-blue-800 bg-clip-text text-transparent tracking-tight animate-slide-in-up drop-shadow-lg">
+            <div className="space-y-8">
+              <h1 className="text-8xl font-black bg-gradient-to-r from-indigo-700 via-purple-700 to-blue-800 bg-clip-text text-transparent tracking-tight animate-slide-in-up drop-shadow-lg">
                 Residents Records
               </h1>
               <div className="flex justify-center">
-                <div className="w-40 h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-blue-600 rounded-full shadow-lg animate-fade-in-up animation-delay-300"></div>
+                <div className="w-48 h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-blue-600 rounded-full shadow-lg animate-fade-in-up animation-delay-300 relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                </div>
               </div>
             </div>
 
-            <div className="max-w-4xl mx-auto space-y-6 animate-fade-in-up animation-delay-500">
-              <p className="text-slate-700 text-2xl leading-relaxed font-semibold">
+            <div className="max-w-5xl mx-auto space-y-8 animate-fade-in-up animation-delay-500">
+              <p className="text-slate-700 text-3xl leading-relaxed font-bold">
                 Advanced Management System for Barangay Community
               </p>
-              <p className="text-slate-600 text-lg leading-relaxed max-w-2xl mx-auto">
+              <p className="text-slate-600 text-xl leading-relaxed max-w-3xl mx-auto">
                 Comprehensive resident profiles, real-time analytics, and intelligent reporting tools for efficient community governance and administration.
               </p>
+              
             </div>
 
-            {/* Enhanced Quick Stats Preview */}
-            <div className="flex flex-wrap justify-center gap-6 mt-10 animate-fade-in-up animation-delay-700">
-              <div className="group bg-white/90 backdrop-blur-md rounded-3xl px-8 py-5 shadow-xl border border-indigo-100 hover:shadow-2xl transition-all duration-500 hover:scale-105 hover:-translate-y-2 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 to-purple-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                <div className="flex items-center gap-4 relative z-10">
-                  <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                    <UserGroupIcon className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="text-left">
-                    <div className="text-3xl font-black text-slate-900 group-hover:text-indigo-700 transition-colors duration-300">
-                      {loading ? <LoadingSpinner size="sm" /> : residents.length}
-                    </div>
-                    <div className="text-sm text-slate-600 font-semibold">Total Residents</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="group bg-white/90 backdrop-blur-md rounded-3xl px-8 py-5 shadow-xl border border-emerald-100 hover:shadow-2xl transition-all duration-500 hover:scale-105 hover:-translate-y-2 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-green-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                <div className="flex items-center gap-4 relative z-10">
-                  <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-green-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                    <CheckCircleIcon className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="text-left">
-                    <div className="text-3xl font-black text-slate-900 group-hover:text-emerald-700 transition-colors duration-300">{analyticsData.voter.active}</div>
-                    <div className="text-sm text-slate-600 font-semibold">Active Voters</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="group bg-white/90 backdrop-blur-md rounded-3xl px-8 py-5 shadow-xl border border-rose-100 hover:shadow-2xl transition-all duration-500 hover:scale-105 hover:-translate-y-2 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-rose-50 to-pink-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                <div className="flex items-center gap-4 relative z-10">
-                  <div className="w-12 h-12 bg-gradient-to-br from-rose-500 to-pink-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                    <UserIcon className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="text-left">
-                    <div className="text-3xl font-black text-slate-900 group-hover:text-rose-700 transition-colors duration-300">{analyticsData.age.adults}</div>
-                    <div className="text-sm text-slate-600 font-semibold">Adults</div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Enhanced Statistics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
-            <div className="group bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-slate-200 hover:shadow-2xl transition-all duration-500 hover:scale-105 hover:-translate-y-2 relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 to-purple-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+            <div className="group bg-white/90 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-slate-200/50 hover:shadow-3xl transition-all duration-700 hover:scale-105 hover:-translate-y-3 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/80 to-purple-50/80 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <div className="relative z-10">
                 <div className="flex justify-between items-start mb-6">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg group-hover:scale-110 transition-transform duration-300">
-                    <UserGroupIcon className="w-8 h-8 text-white" />
+                  <div className="w-20 h-20 rounded-3xl flex items-center justify-center bg-gradient-to-br from-indigo-500 via-purple-500 to-indigo-600 shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent rounded-3xl"></div>
+                    <UserGroupIcon className="w-10 h-10 text-white relative z-10 drop-shadow-lg" />
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-slate-600 uppercase tracking-wider">Total</p>
-                    <p className="text-4xl font-black text-slate-900 group-hover:text-indigo-700 transition-colors duration-300">{residents.length}</p>
+                    <p className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-1">Total</p>
+                    <p className="text-5xl font-black text-slate-900 group-hover:text-indigo-700 transition-colors duration-500 drop-shadow-sm">{residents.length}</p>
                   </div>
                 </div>
-                <p className="text-lg font-bold text-slate-700 group-hover:text-indigo-600 transition-colors duration-300">Residents</p>
-                <div className="w-full bg-slate-200 rounded-full h-2 mt-4 overflow-hidden">
-                  <div className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full transition-all duration-1000 group-hover:from-indigo-600 group-hover:to-purple-700" style={{ width: '100%' }}></div>
+                <p className="text-xl font-bold text-slate-700 group-hover:text-indigo-600 transition-colors duration-500 mb-4">Residents</p>
+                <div className="w-full bg-slate-200 rounded-full h-3 mt-4 overflow-hidden shadow-inner">
+                  <div className="bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600 h-3 rounded-full transition-all duration-1500 group-hover:from-indigo-600 group-hover:via-purple-600 group-hover:to-indigo-700 relative overflow-hidden" style={{ width: '100%' }}>
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="group bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-slate-200 hover:shadow-2xl transition-all duration-500 hover:scale-105 hover:-translate-y-2 relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-green-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+            <div className="group bg-white/90 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-slate-200/50 hover:shadow-3xl transition-all duration-700 hover:scale-105 hover:-translate-y-3 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/80 to-green-50/80 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <div className="relative z-10">
                 <div className="flex justify-between items-start mb-6">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-gradient-to-br from-emerald-500 to-green-600 shadow-lg group-hover:scale-110 transition-transform duration-300">
-                    <CheckCircleIcon className="w-8 h-8 text-white" />
+                  <div className="w-20 h-20 rounded-3xl flex items-center justify-center bg-gradient-to-br from-emerald-500 via-green-500 to-emerald-600 shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent rounded-3xl"></div>
+                    <CheckCircleIcon className="w-10 h-10 text-white relative z-10 drop-shadow-lg" />
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-slate-600 uppercase tracking-wider">Active</p>
-                    <p className="text-4xl font-black text-slate-900 group-hover:text-emerald-700 transition-colors duration-300">{residents.filter(r => r.update_status === 'Active').length}</p>
+                    <p className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-1">Active</p>
+                    <p className="text-5xl font-black text-slate-900 group-hover:text-emerald-700 transition-colors duration-500 drop-shadow-sm">{residents.filter(r => r.update_status === 'Active').length}</p>
                   </div>
                 </div>
-                <p className="text-lg font-bold text-slate-700 group-hover:text-emerald-600 transition-colors duration-300">Records</p>
-                <div className="w-full bg-slate-200 rounded-full h-2 mt-4 overflow-hidden">
-                  <div className="bg-gradient-to-r from-emerald-500 to-green-600 h-2 rounded-full transition-all duration-1000 group-hover:from-emerald-600 group-hover:to-green-700" style={{ width: `${residents.length > 0 ? (residents.filter(r => r.update_status === 'Active').length / residents.length) * 100 : 0}%` }}></div>
+                <p className="text-xl font-bold text-slate-700 group-hover:text-emerald-600 transition-colors duration-500 mb-4">Records</p>
+                <div className="w-full bg-slate-200 rounded-full h-3 mt-4 overflow-hidden shadow-inner">
+                  <div className="bg-gradient-to-r from-emerald-500 via-green-500 to-emerald-600 h-3 rounded-full transition-all duration-1500 group-hover:from-emerald-600 group-hover:via-green-600 group-hover:to-emerald-700 relative overflow-hidden" style={{ width: `${residents.length > 0 ? (residents.filter(r => r.update_status === 'Active').length / residents.length) * 100 : 0}%` }}>
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="group bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-slate-200 hover:shadow-2xl transition-all duration-500 hover:scale-105 hover:-translate-y-2 relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-orange-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+            <div className="group bg-white/90 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-slate-200/50 hover:shadow-3xl transition-all duration-700 hover:scale-105 hover:-translate-y-3 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-amber-50/80 to-orange-50/80 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <div className="relative z-10">
                 <div className="flex justify-between items-start mb-6">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-gradient-to-br from-amber-500 to-orange-600 shadow-lg group-hover:scale-110 transition-transform duration-300">
-                    <ExclamationTriangleIcon className="w-8 h-8 text-white" />
+                  <div className="w-20 h-20 rounded-3xl flex items-center justify-center bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent rounded-3xl"></div>
+                    <ExclamationTriangleIcon className="w-10 h-10 text-white relative z-10 drop-shadow-lg" />
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-slate-600 uppercase tracking-wider">Review</p>
-                    <p className="text-4xl font-black text-slate-900 group-hover:text-amber-700 transition-colors duration-300">{residents.filter(r => r.for_review).length}</p>
+                    <p className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-1">Review</p>
+                    <p className="text-5xl font-black text-slate-900 group-hover:text-amber-700 transition-colors duration-500 drop-shadow-sm">{residents.filter(r => r.for_review).length}</p>
                   </div>
                 </div>
-                <p className="text-lg font-bold text-slate-700 group-hover:text-amber-600 transition-colors duration-300">Pending</p>
-                <div className="w-full bg-slate-200 rounded-full h-2 mt-4 overflow-hidden">
-                  <div className="bg-gradient-to-r from-amber-500 to-orange-600 h-2 rounded-full transition-all duration-1000 group-hover:from-amber-600 group-hover:to-orange-700" style={{ width: `${residents.length > 0 ? (residents.filter(r => r.for_review).length / residents.length) * 100 : 0}%` }}></div>
+                <p className="text-xl font-bold text-slate-700 group-hover:text-amber-600 transition-colors duration-500 mb-4">Pending</p>
+                <div className="w-full bg-slate-200 rounded-full h-3 mt-4 overflow-hidden shadow-inner">
+                  <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 h-3 rounded-full transition-all duration-1500 group-hover:from-amber-600 group-hover:via-orange-600 group-hover:to-amber-700 relative overflow-hidden" style={{ width: `${residents.length > 0 ? (residents.filter(r => r.for_review).length / residents.length) * 100 : 0}%` }}>
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="group bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-slate-200 hover:shadow-2xl transition-all duration-500 hover:scale-105 hover:-translate-y-2 relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-cyan-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+            <div className="group bg-white/90 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-slate-200/50 hover:shadow-3xl transition-all duration-700 hover:scale-105 hover:-translate-y-3 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-50/80 to-cyan-50/80 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <div className="relative z-10">
                 <div className="flex justify-between items-start mb-6">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-gradient-to-br from-blue-500 to-cyan-600 shadow-lg group-hover:scale-110 transition-transform duration-300">
-                    <ShieldCheckIcon className="w-8 h-8 text-white" />
+                  <div className="w-20 h-20 rounded-3xl flex items-center justify-center bg-gradient-to-br from-blue-500 via-cyan-500 to-blue-600 shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent rounded-3xl"></div>
+                    <ShieldCheckIcon className="w-10 h-10 text-white relative z-10 drop-shadow-lg" />
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-slate-600 uppercase tracking-wider">Verified</p>
-                    <p className="text-4xl font-black text-slate-900 group-hover:text-blue-700 transition-colors duration-300">{residents.filter(r => r.verification_status === 'approved').length}</p>
+                    <p className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-1">Verified</p>
+                    <p className="text-5xl font-black text-slate-900 group-hover:text-blue-700 transition-colors duration-500 drop-shadow-sm">{residents.filter(r => r.verification_status === 'approved').length}</p>
                   </div>
                 </div>
-                <p className="text-lg font-bold text-slate-700 group-hover:text-blue-600 transition-colors duration-300">Profiles</p>
-                <div className="w-full bg-slate-200 rounded-full h-2 mt-4 overflow-hidden">
-                  <div className="bg-gradient-to-r from-blue-500 to-cyan-600 h-2 rounded-full transition-all duration-1000 group-hover:from-blue-600 group-hover:to-cyan-700" style={{ width: `${residents.length > 0 ? (residents.filter(r => r.verification_status === 'approved').length / residents.length) * 100 : 0}%` }}></div>
+                <p className="text-xl font-bold text-slate-700 group-hover:text-blue-600 transition-colors duration-500 mb-4">Profiles</p>
+                <div className="w-full bg-slate-200 rounded-full h-3 mt-4 overflow-hidden shadow-inner">
+                  <div className="bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-600 h-3 rounded-full transition-all duration-1500 group-hover:from-blue-600 group-hover:via-cyan-600 group-hover:to-blue-700 relative overflow-hidden" style={{ width: `${residents.length > 0 ? (residents.filter(r => r.verification_status === 'approved').length / residents.length) * 100 : 0}%` }}>
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1972,26 +2185,111 @@ const ResidentsRecords = () => {
                   : 'Registrations over the last 12 months'}
               </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl p-6 border border-emerald-200 shadow-lg hover:shadow-xl transition-all duration-300">
-                  <h4 className="text-lg font-bold text-emerald-800 mb-3 flex items-center gap-3">
-                    <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-                      <UserIcon className="w-4 h-4 text-white" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Enhanced Most Common Gender Card */}
+                <div className="group relative bg-white/90 backdrop-blur-sm rounded-3xl p-8 shadow-2xl border border-white/30 overflow-hidden transform hover:scale-105 transition-all duration-500 hover:shadow-3xl">
+                  {/* Animated background gradient */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-green-500/5 to-teal-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                  
+                  {/* Decorative elements */}
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-200/20 to-green-300/20 rounded-full transform translate-x-16 -translate-y-16 group-hover:scale-110 transition-transform duration-500"></div>
+                  <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-emerald-300/20 to-teal-400/20 rounded-full transform -translate-x-12 translate-y-12 group-hover:scale-110 transition-transform duration-500"></div>
+                  
+                  <div className="relative z-10">
+                    {/* Header with enhanced icon */}
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-green-600 rounded-2xl flex items-center justify-center shadow-xl group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+                        <UserIcon className="w-8 h-8 text-white drop-shadow-lg" />
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-black text-gray-900 group-hover:text-emerald-700 transition-colors duration-300">
+                          Most Common Gender
+                        </h4>
+                        <p className="text-sm text-gray-600 font-semibold">This Month</p>
+                      </div>
                     </div>
-                    Most Common Gender This Month
-                  </h4>
-                  <p className="text-2xl font-black text-emerald-900 mb-1">{getMostCommonDemographic(residents, 'sex', true).value || 'N/A'}</p>
-                  <p className="text-sm text-emerald-700 font-semibold">{getMostCommonDemographic(residents, 'sex', true).count} residents registered</p>
+                    
+                    {/* Main content */}
+                    <div className="space-y-4">
+                      <div className="text-center">
+                        <div className="text-5xl font-black text-emerald-600 group-hover:text-emerald-700 transition-colors duration-300 mb-2">
+                          {getMostCommonDemographic(residents, 'sex', true).value || 'N/A'}
+                        </div>
+                        <div className="text-lg font-bold text-gray-700 group-hover:text-emerald-600 transition-colors duration-300">
+                          {getMostCommonDemographic(residents, 'sex', true).count} residents registered
+                        </div>
+                      </div>
+                      
+                      {/* Progress bar */}
+                      <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                        <div 
+                          className="bg-gradient-to-r from-emerald-500 to-green-500 h-3 rounded-full transition-all duration-1000 group-hover:from-emerald-600 group-hover:to-green-600"
+                          style={{ 
+                            width: `${Math.min((getMostCommonDemographic(residents, 'sex', true).count / residents.length) * 100, 100)}%` 
+                          }}
+                        ></div>
+                      </div>
+                      
+                      {/* Additional stats */}
+                      <div className="flex justify-between items-center text-sm text-gray-600">
+                        <span className="font-semibold">Total this month</span>
+                        <span className="font-bold text-emerald-600">{getMostCommonDemographic(residents, 'sex', true).count}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200 shadow-lg hover:shadow-xl transition-all duration-300">
-                  <h4 className="text-lg font-bold text-blue-800 mb-3 flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-                      <HeartIcon className="w-4 h-4 text-white" />
+
+                {/* Enhanced Most Common Civil Status Card */}
+                <div className="group relative bg-white/90 backdrop-blur-sm rounded-3xl p-8 shadow-2xl border border-white/30 overflow-hidden transform hover:scale-105 transition-all duration-500 hover:shadow-3xl">
+                  {/* Animated background gradient */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                  
+                  {/* Decorative elements */}
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-200/20 to-indigo-300/20 rounded-full transform translate-x-16 -translate-y-16 group-hover:scale-110 transition-transform duration-500"></div>
+                  <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-blue-300/20 to-purple-400/20 rounded-full transform -translate-x-12 translate-y-12 group-hover:scale-110 transition-transform duration-500"></div>
+                  
+                  <div className="relative z-10">
+                    {/* Header with enhanced icon */}
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-xl group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+                        <HeartIcon className="w-8 h-8 text-white drop-shadow-lg" />
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-black text-gray-900 group-hover:text-blue-700 transition-colors duration-300">
+                          Most Common Civil Status
+                        </h4>
+                        <p className="text-sm text-gray-600 font-semibold">Overall</p>
+                      </div>
                     </div>
-                    Most Common Civil Status
-                  </h4>
-                  <p className="text-2xl font-black text-blue-900 mb-1">{getMostCommonDemographic(residents, 'civil_status', false).value || 'N/A'}</p>
-                  <p className="text-sm text-blue-700 font-semibold">{getMostCommonDemographic(residents, 'civil_status', false).count} residents overall</p>
+                    
+                    {/* Main content */}
+                    <div className="space-y-4">
+                      <div className="text-center">
+                        <div className="text-5xl font-black text-blue-600 group-hover:text-blue-700 transition-colors duration-300 mb-2">
+                          {getMostCommonDemographic(residents, 'civil_status', false).value || 'N/A'}
+                        </div>
+                        <div className="text-lg font-bold text-gray-700 group-hover:text-blue-600 transition-colors duration-300">
+                          {getMostCommonDemographic(residents, 'civil_status', false).count} residents overall
+                        </div>
+                      </div>
+                      
+                      {/* Progress bar */}
+                      <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                        <div 
+                          className="bg-gradient-to-r from-blue-500 to-indigo-500 h-3 rounded-full transition-all duration-1000 group-hover:from-blue-600 group-hover:to-indigo-600"
+                          style={{ 
+                            width: `${Math.min((getMostCommonDemographic(residents, 'civil_status', false).count / residents.length) * 100, 100)}%` 
+                          }}
+                        ></div>
+                      </div>
+                      
+                      {/* Additional stats */}
+                      <div className="flex justify-between items-center text-sm text-gray-600">
+                        <span className="font-semibold">Total residents</span>
+                        <span className="font-bold text-blue-600">{getMostCommonDemographic(residents, 'civil_status', false).count}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1999,24 +2297,37 @@ const ResidentsRecords = () => {
 
           
           {/* Enhanced Search and Add Section */}
-          <div className="relative bg-gradient-to-br from-white/90 via-slate-50/80 to-indigo-50/70 rounded-2xl shadow-xl border border-slate-200/50 p-6 mb-8 transition-all duration-500 hover:shadow-2xl backdrop-blur-md overflow-hidden">
-            {/* Decorative Background Elements */}
-            <div className="absolute top-0 right-0 w-60 h-60 bg-gradient-to-br from-indigo-200/20 to-purple-300/20 rounded-full -translate-y-30 translate-x-30 blur-2xl"></div>
-            <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-blue-200/20 to-cyan-300/20 rounded-full translate-y-24 -translate-x-24 blur-2xl"></div>
+          <div className="relative bg-gradient-to-br from-white/95 via-slate-50/90 to-indigo-50/80 rounded-3xl shadow-2xl border border-slate-200/60 p-8 mb-12 transition-all duration-700 hover:shadow-3xl backdrop-blur-lg overflow-hidden">
+            {/* Enhanced Decorative Background Elements */}
+            <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-indigo-200/30 to-purple-300/30 rounded-full -translate-y-36 translate-x-36 blur-3xl animate-pulse"></div>
+            <div className="absolute bottom-0 left-0 w-56 h-56 bg-gradient-to-tr from-blue-200/30 to-cyan-300/30 rounded-full translate-y-28 -translate-x-28 blur-3xl animate-pulse delay-1000"></div>
+            <div className="absolute top-1/2 left-1/2 w-40 h-40 bg-gradient-to-br from-purple-200/20 to-pink-300/20 rounded-full -translate-x-20 -translate-y-20 blur-2xl animate-pulse delay-500"></div>
+            
+            {/* Additional floating elements */}
+            <div className="absolute top-1/4 left-1/4 w-16 h-16 bg-gradient-to-br from-cyan-300/20 to-blue-300/20 rounded-full blur-lg animate-float"></div>
+            <div className="absolute bottom-1/3 right-1/3 w-12 h-12 bg-gradient-to-br from-pink-300/20 to-rose-300/20 rounded-full blur-md animate-float-delayed"></div>
 
             <div className="relative z-10">
-              {/* Section Header */}
-              <div className="text-center mb-6 animate-fade-in-up">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl shadow-xl mb-4 transform transition-all duration-500 hover:scale-105 hover:rotate-3 relative overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent"></div>
-                  <SparklesIcon className="w-8 h-8 text-white relative z-10 drop-shadow-lg" />
+              {/* Enhanced Section Header */}
+              <div className="text-center mb-8 animate-fade-in-up">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-700 rounded-3xl shadow-2xl mb-6 transform transition-all duration-700 hover:scale-110 hover:rotate-6 hover:shadow-3xl relative overflow-hidden group">
+                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/30 to-transparent group-hover:animate-spin"></div>
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                  <SparklesIcon className="w-10 h-10 text-white relative z-10 drop-shadow-lg group-hover:scale-110 transition-transform duration-300" />
                 </div>
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-800 to-purple-800 bg-clip-text text-transparent mb-2">
+                <h2 className="text-4xl font-black bg-gradient-to-r from-indigo-800 via-purple-800 to-indigo-900 bg-clip-text text-transparent mb-4 drop-shadow-sm">
                   Management Control Center
                 </h2>
-                <p className="text-slate-600 text-sm max-w-xl mx-auto font-medium">
+                <p className="text-slate-600 text-lg max-w-2xl mx-auto font-semibold leading-relaxed">
                   Advanced tools for comprehensive resident management, real-time analytics, and streamlined administrative operations
                 </p>
+                
+                {/* Decorative line */}
+                <div className="flex justify-center mt-6">
+                  <div className="w-24 h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600 rounded-full shadow-lg relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer"></div>
+                  </div>
+                </div>
               </div>
 
               <div className="flex flex-col xl:flex-row justify-between items-center gap-6">
@@ -2049,10 +2360,10 @@ const ResidentsRecords = () => {
                       <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center group-hover:scale-125 group-hover:rotate-12 transition-all duration-500 shadow-lg">
                         <ChartBarIcon className="w-5 h-5 drop-shadow-sm" />
                       </div>
-                      <div className="text-left">
-                        <div className="font-bold text-base">{showAnalytics ? "Hide" : "Show"} Analytics</div>
-                        <div className="text-xs text-indigo-100 font-medium">Reports & insights</div>
-                      </div>
+                        <div className="text-left">
+                          <div className="font-bold text-base">{showAnalytics ? "Hide" : "View"} Analytics</div>
+                          <div className="text-xs text-indigo-100 font-medium">Reports & insights</div>
+                        </div>
                     </div>
                   </button>
 
@@ -2072,7 +2383,7 @@ const ResidentsRecords = () => {
                         <UserGroupIcon className="w-5 h-5 drop-shadow-sm" />
                       </div>
                       <div className="text-left">
-                        <div className="font-bold text-base">{showResidentsUsers ? 'View Residents' : 'User Accounts'}</div>
+                        <div className="font-bold text-base">{showResidentsUsers ? 'Hide User Accounts' : 'View User Accounts'}</div>
                         <div className="text-xs text-violet-100 font-medium">Manage users</div>
                       </div>
                     </div>
@@ -2094,106 +2405,34 @@ const ResidentsRecords = () => {
                         <TrashIcon className="w-5 h-5 drop-shadow-sm" />
                       </div>
                       <div className="text-left">
-                        <div className="font-bold text-base">Deleted Records</div>
+                        <div className="font-bold text-base">{showRecentlyDeleted ? 'Hide Deleted Records' : 'View Deleted Records'}</div>
                         <div className="text-xs text-rose-100 font-medium">Recovery center</div>
                       </div>
                     </div>
                   </button>
-                </div>
 
-                {/* Enhanced Search and Filter Section */}
-                <div className="w-full xl:w-auto xl:min-w-[500px]">
-                  <div className="bg-white/90 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-slate-200/50 transition-all duration-500 hover:shadow-2xl hover:bg-white/95 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
-                    <div className="relative z-10">
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                          <MagnifyingGlassIcon className="w-5 h-5 text-white" />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-lg text-slate-900">Search & Filter</h3>
-                          <p className="text-slate-600 text-sm font-medium">Find and filter resident records</p>
-                        </div>
+                  <button
+                    onClick={() => {
+                      const newState = !showResidentRecords;
+                      setShowResidentRecords(newState);
+                      localStorage.setItem('showResidentRecords', JSON.stringify(newState));
+                    }}
+                    className="group relative bg-gradient-to-br from-cyan-600 via-teal-600 to-emerald-700 hover:from-cyan-700 hover:via-teal-700 hover:to-emerald-800 text-white px-6 py-4 rounded-2xl shadow-xl flex items-center justify-center gap-3 text-sm font-bold transition-all duration-500 transform hover:scale-105 hover:-translate-y-2 focus:outline-none focus:ring-4 focus:ring-cyan-500/40 overflow-hidden"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    <div className="absolute inset-0 bg-gradient-to-tl from-transparent via-white/10 to-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    <div className="relative flex items-center gap-3">
+                      <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center group-hover:rotate-12 group-hover:scale-110 transition-all duration-500 shadow-lg">
+                        <DocumentTextIcon className="w-5 h-5 drop-shadow-sm" />
                       </div>
-
-                      <div className="space-y-4">
-                        {/* Enhanced Search Input */}
-                        <div className="relative group">
-                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-                            <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-300" />
-                          </div>
-                          <input
-                            type="text"
-                            className="w-full pl-12 pr-12 py-3 border-2 border-slate-200 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 rounded-2xl text-sm font-medium shadow-lg transition-all duration-300 focus:shadow-xl bg-white hover:shadow-md placeholder-slate-400 group-focus-within:placeholder-indigo-300"
-                            placeholder="🔍 Search residents by name, ID, or any details..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                          />
-                          {search && (
-                            <button
-                              onClick={() => setSearch('')}
-                              className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-red-500 transition-all duration-300 z-10 hover:scale-110"
-                            >
-                              <div className="w-6 h-6 bg-red-100 hover:bg-red-200 rounded-full flex items-center justify-center transition-colors duration-300 shadow-md">
-                                <XMarkIcon className="w-4 h-4" />
-                              </div>
-                            </button>
-                          )}
-                          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-2xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                        <div className="text-left">
+                          <div className="font-bold text-base">{showResidentRecords ? 'Hide' : 'View'} Resident Records</div>
+                          <div className="text-xs text-cyan-100 font-medium">Toggle table view</div>
                         </div>
-
-                        <div className="flex gap-3">
-                          {/* Enhanced Status Filter */}
-                          <div className="relative flex-1 group">
-                            <select
-                              value={statusFilter}
-                              onChange={(e) => setStatusFilter(e.target.value)}
-                              className="appearance-none w-full bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 pr-10 text-sm font-semibold focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-lg hover:shadow-md transition-all duration-300 cursor-pointer group-focus-within:border-indigo-500"
-                            >
-                              <option value="">📊 All Status Types</option>
-                              <option value="active">✅ Active Records</option>
-                              <option value="outdated">⏰ Outdated Records</option>
-                              <option value="needs_verification">🔍 Needs Verification</option>
-                              <option value="for_review">👀 For Review</option>
-                            </select>
-                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                              <ChevronDownIcon className="w-5 h-5 text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-300" />
-                            </div>
-                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-2xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-                          </div>
-
-                          {/* Enhanced Advanced Filter Button */}
-                          <button className="group relative bg-gradient-to-br from-slate-600 via-gray-700 to-slate-800 hover:from-slate-700 hover:via-gray-800 hover:to-slate-900 text-white px-6 py-3 rounded-2xl text-sm font-bold shadow-xl transition-all duration-500 transform hover:scale-105 hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-slate-500/40 overflow-hidden">
-                            <div className="absolute inset-0 bg-gradient-to-br from-white/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                            <div className="relative flex items-center gap-2">
-                              <FunnelIcon className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
-                              <span className="hidden sm:inline">Advanced</span>
-                            </div>
-                          </button>
-                        </div>
-
-                        {/* Enhanced Search Results Counter */}
-                        {(search || statusFilter) && (
-                          <div className="flex items-center justify-between text-sm bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl px-4 py-3 animate-fade-in border border-indigo-200 shadow-md">
-                            <span className="flex items-center gap-2 font-semibold text-slate-700">
-                              <CheckCircleIcon className="w-4 h-4 text-indigo-500" />
-                              Found {filteredResidents.length} resident{filteredResidents.length !== 1 ? 's' : ''}
-                            </span>
-                            <button
-                              onClick={() => {
-                                setSearch('');
-                                setStatusFilter('');
-                              }}
-                              className="text-indigo-600 hover:text-indigo-800 font-bold transition-colors duration-300 hover:scale-105 transform"
-                            >
-                              Clear filters
-                            </button>
-                          </div>
-                        )}
-                      </div>
                     </div>
-                  </div>
+                  </button>
                 </div>
+
               </div>
             </div>
           </div>
@@ -2532,7 +2771,7 @@ const ResidentsRecords = () => {
                           </td>
                         </tr>
                       ) : (
-                        residentsUsers.map((user, index) => (
+                        getPaginatedUsers().map((user, index) => (
                           <tr key={`user-${user.id}-${index}`} className="hover:bg-blue-50 transition-all duration-200 border-b border-gray-100 hover:border-blue-200">
                             <td className="px-6 py-4">
                               <div className="font-semibold text-gray-900">{user.name}</div>
@@ -2551,7 +2790,7 @@ const ResidentsRecords = () => {
                               </span>
                             </td>
                             <td className="px-6 py-4">
-                              {user.profile?.verification_status === 'approved' ? (
+                              {getVerificationStatus(user) === 'approved' ? (
                                 <div className="flex items-center gap-2 text-green-700 bg-green-50 px-3 py-2 rounded-lg">
                                   <CheckIcon className="w-5 h-5" />
                                   <span className="font-medium">Verified</span>
@@ -2566,7 +2805,7 @@ const ResidentsRecords = () => {
                             <td className="px-6 py-4">
                               <div className="flex flex-col items-center gap-2">
                                 {/* Verification Status */}
-                                {user.profile?.verification_status === 'approved' ? (
+                                {getVerificationStatus(user) === 'approved' ? (
                                   <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1">
                                     <CheckIcon className="w-4 h-4" />
                                     Verified
@@ -2578,20 +2817,21 @@ const ResidentsRecords = () => {
                                 )}
                                 
                                 {/* Image Preview */}
-                                {user.profile?.residency_verification_image ? (
+                                {(user.resident?.residency_verification_image || user.profile?.residency_verification_image) && 
+                                 (user.resident?.verification_status || user.profile?.verification_status) !== 'denied' ? (
                                   <div className="relative group">
                                     <img
-                                      src={`http://localhost:8000/storage/${user.profile.residency_verification_image}`}
+                                      src={`http://localhost:8000/storage/${user.resident?.residency_verification_image || user.profile?.residency_verification_image}`}
                                       alt="Residency Verification"
                                       className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:scale-105 transition-transform duration-200 shadow-md"
                                       onClick={() => {
-                                        setSelectedImage(`http://localhost:8000/storage/${user.profile.residency_verification_image}`);
+                                        setSelectedImage(`http://localhost:8000/storage/${user.resident?.residency_verification_image || user.profile?.residency_verification_image}`);
                                         setSelectedImageTitle(`${user.name} - Residency Verification`);
                                         setImageLoading(true);
                                         setShowImageModal(true);
                                       }}
                                       onError={(e) => {
-                                        console.error("Image failed to load:", user.profile.residency_verification_image);
+                                        console.error("Image failed to load:", user.resident?.residency_verification_image || user.profile?.residency_verification_image);
                                         e.target.style.display = 'none';
                                         e.target.nextSibling.style.display = 'flex';
                                       }}
@@ -2615,21 +2855,22 @@ const ResidentsRecords = () => {
                                 
                                 {/* Status Badge */}
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  user.profile?.verification_status === 'approved'
+                                  getVerificationStatus(user) === 'approved'
                                     ? 'bg-green-100 text-green-800'
-                                    : user.profile?.verification_status === 'denied'
+                                    : getVerificationStatus(user) === 'denied'
                                       ? 'bg-red-100 text-red-800'
                                       : 'bg-yellow-100 text-yellow-800'
                                 }`}>
-                                  {user.profile?.verification_status || 'Pending'}
+                                  {getVerificationStatus(user)}
                                 </span>
                               </div>
                             </td>
                             <td className="px-6 py-4 space-x-2">
-                              {user.profile?.residency_verification_image ? (
+                              {(user.resident?.residency_verification_image || user.profile?.residency_verification_image) && 
+                               getVerificationStatus(user) !== 'denied' ? (
                                 <button
                                   onClick={() => {
-                                    setSelectedImage(`http://localhost:8000/storage/${user.profile.residency_verification_image}`);
+                                    setSelectedImage(`http://localhost:8000/storage/${user.resident?.residency_verification_image || user.profile?.residency_verification_image}`);
                                     setSelectedImageTitle(`${user.name} - Residency Verification`);
                                     setImageLoading(true);
                                     setShowImageModal(true);
@@ -2655,10 +2896,10 @@ const ResidentsRecords = () => {
                                   </button>
                                 )}
                                 <button
-                                  onClick={() => handleDeny(user.profile?.id)}
-                                  disabled={user.profile?.verification_status === 'denied'}
+                                  onClick={() => handleDeny(user.resident?.id || user.profile?.id)}
+                                  disabled={(user.resident?.verification_status || user.profile?.verification_status) === 'denied'}
                                   className={`px-3 py-1 rounded text-xs font-medium ${
-                                    user.profile?.verification_status === 'denied'
+                                    (user.resident?.verification_status || user.profile?.verification_status) === 'denied'
                                       ? 'bg-red-100 text-red-800 cursor-not-allowed'
                                       : 'bg-red-500 hover:bg-red-600 text-white'
                                   } transition-all duration-300 hover:shadow-md`}
@@ -2673,6 +2914,66 @@ const ResidentsRecords = () => {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Pagination for User Accounts */}
+                {usersTotalPages > 1 && (
+                  <div className="flex justify-center mt-8 px-6 pb-6">
+                    <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+                      <div className="flex items-center justify-between gap-4">
+                        {/* Page Info */}
+                        <div className="text-sm text-gray-600">
+                          Page {usersCurrentPage} of {usersTotalPages}
+                        </div>
+                        
+                        {/* Pagination Controls */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleUsersPageChange(Math.max(1, usersCurrentPage - 1))}
+                            disabled={usersCurrentPage <= 1}
+                            className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                            Previous
+                          </button>
+
+                          {/* Page Numbers */}
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: Math.min(5, usersTotalPages) }, (_, i) => {
+                              const pageNum = Math.max(1, Math.min(usersTotalPages - 4, usersCurrentPage - 2)) + i;
+                              if (pageNum > usersTotalPages) return null;
+                              return (
+                                <button
+                                  key={pageNum}
+                                  onClick={() => handleUsersPageChange(pageNum)}
+                                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+                                    usersCurrentPage === pageNum
+                                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
+                                      : 'hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <button
+                            onClick={() => handleUsersPageChange(Math.min(usersTotalPages, usersCurrentPage + 1))}
+                            disabled={usersCurrentPage >= usersTotalPages}
+                            className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 flex items-center gap-2"
+                          >
+                            Next
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             
@@ -2723,7 +3024,7 @@ const ResidentsRecords = () => {
                           </td>
                         </tr>
                       ) : (
-                        recentlyDeletedResidents.map((r, index) => (
+                        getPaginatedDeletedResidents().map((r, index) => (
                           <tr key={`deleted-${r.id}-${index}`} className="hover:bg-red-50 transition-all duration-200 border-b border-gray-100 hover:border-red-200">
                             <td className="px-6 py-4"><AvatarImg avatarPath={r.avatar} /></td>
                             <td className="px-4 py-4">
@@ -2767,10 +3068,71 @@ const ResidentsRecords = () => {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Pagination for Deleted Records */}
+                {deletedTotalPages > 1 && (
+                  <div className="flex justify-center mt-8 px-6 pb-6">
+                    <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+                      <div className="flex items-center justify-between gap-4">
+                        {/* Page Info */}
+                        <div className="text-sm text-gray-600">
+                          Page {deletedCurrentPage} of {deletedTotalPages}
+                        </div>
+                        
+                        {/* Pagination Controls */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleDeletedPageChange(Math.max(1, deletedCurrentPage - 1))}
+                            disabled={deletedCurrentPage <= 1}
+                            className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                            Previous
+                          </button>
+
+                          {/* Page Numbers */}
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: Math.min(5, deletedTotalPages) }, (_, i) => {
+                              const pageNum = Math.max(1, Math.min(deletedTotalPages - 4, deletedCurrentPage - 2)) + i;
+                              if (pageNum > deletedTotalPages) return null;
+                              return (
+                                <button
+                                  key={pageNum}
+                                  onClick={() => handleDeletedPageChange(pageNum)}
+                                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+                                    deletedCurrentPage === pageNum
+                                      ? 'bg-gradient-to-r from-red-600 to-orange-600 text-white shadow-lg'
+                                      : 'hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <button
+                            onClick={() => handleDeletedPageChange(Math.min(deletedTotalPages, deletedCurrentPage + 1))}
+                            disabled={deletedCurrentPage >= deletedTotalPages}
+                            className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 flex items-center gap-2"
+                          >
+                            Next
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
           {/* Enhanced Table */}
+          {showResidentRecords && (
           <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-2xl">
             <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4">
               <h3 className="text-white font-semibold text-lg flex items-center gap-2">
@@ -2779,48 +3141,152 @@ const ResidentsRecords = () => {
               </h3>
             </div>
             
-            <div className="overflow-x-auto">
+            {/* Search & Filter Section */}
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+              <div className="bg-white/90 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-slate-200/50 transition-all duration-500 hover:shadow-2xl hover:bg-white/95 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                      <MagnifyingGlassIcon className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg text-slate-900">Search & Filter</h3>
+                      <p className="text-slate-600 text-sm font-medium">Find and filter resident records</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Enhanced Search Input */}
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                        <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-300" />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full pl-12 pr-12 py-3 border-2 border-slate-200 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 rounded-2xl text-sm font-medium shadow-lg transition-all duration-300 focus:shadow-xl bg-white hover:shadow-md placeholder-slate-400 group-focus-within:placeholder-indigo-300"
+                        placeholder="🔍 Search residents by name, ID, or any details..."
+                        value={search}
+                        onChange={(e) => {
+                          setSearch(e.target.value);
+                          setCurrentPage(1); // Reset to first page when searching
+                        }}
+                      />
+                      {search && (
+                        <button
+                          onClick={() => setSearch('')}
+                          className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-red-500 transition-all duration-300 z-10 hover:scale-110"
+                        >
+                          <div className="w-6 h-6 bg-red-100 hover:bg-red-200 rounded-full flex items-center justify-center transition-colors duration-300 shadow-md">
+                            <XMarkIcon className="w-4 h-4" />
+                          </div>
+                        </button>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-2xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      {/* Enhanced Status Filter */}
+                      <div className="relative flex-1 group">
+                        <select
+                          value={statusFilter}
+                          onChange={(e) => {
+                            setStatusFilter(e.target.value);
+                            setCurrentPage(1); // Reset to first page when filtering
+                          }}
+                          className="appearance-none w-full bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 pr-10 text-sm font-semibold focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-lg hover:shadow-md transition-all duration-300 cursor-pointer group-focus-within:border-indigo-500"
+                        >
+                          <option value="">📊 All Status Types</option>
+                          <option value="active">✅ Active Records</option>
+                          <option value="outdated">⏰ Outdated Records</option>
+                          <option value="needs_verification">🔍 Needs Verification</option>
+                          <option value="for_review">👀 For Review</option>
+                        </select>
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          <ChevronDownIcon className="w-5 h-5 text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-300" />
+                        </div>
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-2xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                      </div>
+
+                      {/* Enhanced Advanced Filter Button */}
+                      <button className="group relative bg-gradient-to-br from-slate-600 via-gray-700 to-slate-800 hover:from-slate-700 hover:via-gray-800 hover:to-slate-900 text-white px-6 py-3 rounded-2xl text-sm font-bold shadow-xl transition-all duration-500 transform hover:scale-105 hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-slate-500/40 overflow-hidden">
+                        <div className="absolute inset-0 bg-gradient-to-br from-white/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        <div className="relative flex items-center gap-2">
+                          <FunnelIcon className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+                          <span className="hidden sm:inline">Advanced</span>
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Enhanced Search Results Counter */}
+                    {(search || statusFilter) && (
+                      <div className="flex items-center justify-between text-sm bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl px-4 py-3 animate-fade-in border border-indigo-200 shadow-md">
+                        <span className="flex items-center gap-2 font-semibold text-slate-700">
+                          <CheckCircleIcon className="w-4 h-4 text-indigo-500" />
+                          Found {getFilteredResidents().length} resident{getFilteredResidents().length !== 1 ? 's' : ''}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setSearch('');
+                            setStatusFilter('');
+                            setCurrentPage(1); // Reset to first page when clearing filters
+                          }}
+                          className="text-indigo-600 hover:text-indigo-800 font-bold transition-colors duration-300 hover:scale-105 transform"
+                        >
+                          Clear filters
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto shadow-2xl rounded-2xl">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
+                <thead className="bg-gradient-to-r from-slate-50 via-gray-50 to-slate-50 border-b-2 border-slate-200">
                   <tr>
-                    <th className="px-6 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Profile</th>
-                    <th className="px-4 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Resident ID</th>
-                    <th className="px-6 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Name</th>
-                    <th className="px-4 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Age</th>
-                    <th className="px-4 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Nationality</th>
-                    <th className="px-4 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Civil Status</th>
-                    <th className="px-4 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Gender</th>
-                    <th className="px-4 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Voter</th>
-                    <th className="px-4 py-4 text-left font-semibold text-gray-700 border-r border-gray-200">Voter's ID</th>
-                    <th className="px-4 py-4 text-left font-semibold text-gray-700">Actions</th>
+                    <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Profile</th>
+                    <th className="px-4 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Resident ID</th>
+                    <th className="px-6 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Name</th>
+                    <th className="px-4 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Age</th>
+                    <th className="px-4 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Nationality</th>
+                    <th className="px-4 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Civil Status</th>
+                    <th className="px-4 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Gender</th>
+                    <th className="px-4 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Voter</th>
+                    <th className="px-4 py-5 text-left font-bold text-slate-700 border-r border-slate-200 text-sm uppercase tracking-wider">Voter's ID</th>
+                    <th className="px-4 py-5 text-left font-bold text-slate-700 text-sm uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-slate-200/50">
                   {loading ? (
-                    <tr>
-                      <td colSpan="11" className="px-6 py-12 text-center">
-                        <div className="flex flex-col items-center gap-3">
-                          <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
-                          <p className="text-gray-500 font-medium">Loading residents...</p>
+                    <tr className="hover:bg-slate-50/50 transition-colors duration-200">
+                      <td colSpan="11" className="px-6 py-16 text-center">
+                        <div className="flex flex-col items-center gap-4">
+                          <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin shadow-lg"></div>
+                          <p className="text-slate-600 font-semibold text-lg">Loading residents...</p>
+                          <p className="text-slate-400 text-sm">Please wait while we fetch the data</p>
                         </div>
                       </td>
                     </tr>
-                  ) : filteredResidents.length === 0 ? (
-                    <tr>
-                      <td colSpan="11" className="px-6 py-12 text-center">
-                        <div className="flex flex-col items-center gap-3">
-                          <UserIcon className="w-12 h-12 text-gray-300" />
-                          <p className="text-gray-500 font-medium">No residents found</p>
-                          <p className="text-gray-400 text-sm">Try adjusting your search criteria</p>
+                  ) : getFilteredResidents().length === 0 ? (
+                    <tr className="hover:bg-slate-50/50 transition-colors duration-200">
+                      <td colSpan="11" className="px-6 py-16 text-center">
+                        <div className="flex flex-col items-center gap-4">
+                          <div className="w-16 h-16 bg-gradient-to-br from-slate-100 to-slate-200 rounded-full flex items-center justify-center shadow-lg">
+                            <UserIcon className="w-8 h-8 text-slate-400" />
+                          </div>
+                          <p className="text-slate-600 font-semibold text-lg">No residents found</p>
+                          <p className="text-slate-400 text-sm">Try adjusting your search criteria</p>
                         </div>
                       </td>
                     </tr>
                   ) : (
-                    filteredResidents.map((r, index) => (
+                    getPaginatedResidents().map((r, index) => (
 
                       <React.Fragment key={`resident-${r.id}-${index}`}>
-                        <tr className="hover:bg-green-50 transition-all duration-200 group border-b border-gray-100 hover:border-green-200">
+                        <tr className="hover:bg-gradient-to-r hover:from-green-50/80 hover:to-emerald-50/80 transition-all duration-300 group border-b border-slate-200/50 hover:border-green-300/50 hover:shadow-sm">
                           <td className="px-6 py-4"><AvatarImg avatarPath={r.avatar} /></td>
                           <td className="px-4 py-4">
                             <span className="font-mono text-green-600 bg-green-50 px-2 py-1 rounded text-xs">
@@ -2868,15 +3334,6 @@ const ResidentsRecords = () => {
                                 Edit
                               </button>
                               
-                              {r.verification_status !== 'approved' && (
-                                <button
-                                  onClick={() => handleVerification(r.id, 'approved')}
-                                  className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center gap-2 transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50"
-                                >
-                                  <CheckIcon className="w-4 h-4" />
-                                  Verify
-                                </button>
-                              )}
                               <button
                                 onClick={() => handleDelete(r.id)}
                                 className="bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center gap-2 transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
@@ -3034,7 +3491,68 @@ const ResidentsRecords = () => {
                 </tbody>
               </table>
             </div>
+
+            {/* Enhanced Pagination */}
+            {totalPages > 1 && (
+              <div className="flex justify-center mt-8 px-6 pb-6">
+                <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+                  <div className="flex items-center justify-between gap-4">
+                    {/* Page Info */}
+                    <div className="text-sm text-gray-600">
+                      Page {currentPage} of {totalPages}
+                    </div>
+                    
+                    {/* Pagination Controls */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                        disabled={currentPage <= 1}
+                        className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Previous
+                      </button>
+
+                      {/* Page Numbers */}
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
+                          if (pageNum > totalPages) return null;
+                          return (
+                            <button
+                              key={pageNum}
+                              onClick={() => handlePageChange(pageNum)}
+                              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+                                currentPage === pageNum
+                                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg'
+                                  : 'hover:bg-gray-100'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                        disabled={currentPage >= totalPages}
+                        className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 flex items-center gap-2"
+                      >
+                        Next
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
+          )}
         </div>
 
         {/* Enhanced Select User Modal */}
@@ -3175,8 +3693,12 @@ const ResidentsRecords = () => {
                     Reason for Denial:
                   </label>
                   <textarea
+                    key={`comment-${currentResidentId}`}
                     value={comment}
-                    onChange={(e) => setComment(e.target.value)}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      setComment(newValue);
+                    }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-300 shadow-sm hover:shadow-md"
                     rows="4"
                     placeholder="Enter reason for denial..."
@@ -3547,10 +4069,11 @@ const ResidentsRecords = () => {
          )}
       </main>
     </ErrorBoundary>
-  );
-};
+    );
+  };
 
   return renderUIControls();
 };
 
 export default ResidentsRecords;
+

@@ -6,7 +6,7 @@ import axios from '../../utils/axiosConfig';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   HandThumbUpIcon,
-  HeartIcon,
+  HandThumbDownIcon,
   ChatBubbleLeftRightIcon,
   UserGroupIcon,
   CalendarIcon,
@@ -20,8 +20,8 @@ import {
 } from "@heroicons/react/24/solid";
 
 const reactionTypes = [
-  { type: 'like', icon: HandThumbUpIcon, label: 'Like', color: 'text-blue-600' },
-  { type: 'love', icon: HeartIcon, label: 'Love', color: 'text-pink-600' },
+  { type: 'like', icon: HandThumbUpIcon, label: 'Like', color: 'text-blue-600', bgColor: 'bg-blue-100' },
+  { type: 'dislike', icon: HandThumbDownIcon, label: 'Dislike', color: 'text-red-600', bgColor: 'bg-red-100' },
 ];
 
 const Project = () => {
@@ -34,11 +34,26 @@ const Project = () => {
   const [feedbacks, setFeedbacks] = useState({}); // { [projectId]: [feedback, ...] }
   const [commentInput, setCommentInput] = useState({}); // { [projectId]: 'text' }
   const [selectedProject, setSelectedProject] = useState(null);
+  const [userReactions, setUserReactions] = useState({}); // { [projectId]: 'reactionType' }
+  const [showCommentsModal, setShowCommentsModal] = useState(false);
+  const [modalProjectId, setModalProjectId] = useState(null);
+  const [modalCommentInput, setModalCommentInput] = useState('');
 
   // Fetch all projects
   useEffect(() => {
     fetchProjects();
   }, []);
+
+  // Handle escape key to close modal
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && showCommentsModal) {
+        handleCloseCommentsModal();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showCommentsModal]);
 
   const fetchProjects = async () => {
     try {
@@ -58,6 +73,7 @@ const Project = () => {
       projects.forEach(project => {
         fetchReactionCounts(project.id);
         fetchFeedbacks(project.id);
+        fetchUserReactions(project.id);
       });
     }
   }, [projects]);
@@ -77,6 +93,15 @@ const Project = () => {
     } catch {}
   };
 
+  const fetchUserReactions = async (projectId) => {
+    try {
+      const res = await axios.get(`/projects/${projectId}/user-reaction`);
+      if (res.data && res.data.reaction_type) {
+        setUserReactions(prev => ({ ...prev, [projectId]: res.data.reaction_type }));
+      }
+    } catch {}
+  };
+
   const handleReact = async (projectId, reactionType) => {
     if (!user) {
       alert('You must be logged in to react.');
@@ -84,12 +109,21 @@ const Project = () => {
       return;
     }
     try {
-      await axios.post(`/projects/${projectId}/react`, { reaction_type: reactionType });
+      // If user clicks the same reaction type, remove the reaction
+      const currentReaction = userReactions[projectId];
+      if (currentReaction === reactionType) {
+        await axios.delete(`/projects/${projectId}/react`);
+        setUserReactions(prev => ({ ...prev, [projectId]: null }));
+      } else {
+        await axios.post(`/projects/${projectId}/react`, { reaction_type: reactionType });
+        setUserReactions(prev => ({ ...prev, [projectId]: reactionType }));
+      }
       fetchReactionCounts(projectId);
     } catch (err) {
       alert('You must be logged in to react.');
     }
   };
+
 
   const handleAddFeedback = async (e, projectId) => {
     e.preventDefault();
@@ -104,6 +138,35 @@ const Project = () => {
       });
       setCommentInput(prev => ({ ...prev, [projectId]: '' }));
       fetchFeedbacks(projectId);
+    } catch (err) {
+      alert('You must be logged in to comment.');
+    }
+  };
+
+  const handleViewAllComments = (projectId) => {
+    setModalProjectId(projectId);
+    setShowCommentsModal(true);
+    setModalCommentInput('');
+  };
+
+  const handleCloseCommentsModal = () => {
+    setShowCommentsModal(false);
+    setModalProjectId(null);
+    setModalCommentInput('');
+  };
+
+  const handleAddModalComment = async (e) => {
+    e.preventDefault();
+    if (!modalCommentInput.trim() || !modalProjectId) return;
+    try {
+      await axios.post('/feedbacks', {
+        message: modalCommentInput,
+        subject: 'Comment',
+        category: 'Project',
+        project_id: modalProjectId,
+      });
+      setModalCommentInput('');
+      fetchFeedbacks(modalProjectId);
     } catch (err) {
       alert('You must be logged in to comment.');
     }
@@ -281,20 +344,48 @@ const Project = () => {
                     </div>
                   )}
 
-                  {/* Enhanced Reactions Bar */}
-                  <div className="flex items-center gap-4 mb-8">
-                    {reactionTypes.map(({ type, icon: Icon, label, color }) => (
+                  {/* Separate Like and Dislike Buttons */}
+                  <div className="flex items-center justify-between mb-8">
+                    <div className="flex items-center gap-4">
+                      {/* Like Button */}
                       <button
-                        key={type}
-                        onClick={() => handleReact(project.id, type)}
-                        className={`flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-green-100 to-emerald-100 hover:from-green-200 hover:to-emerald-200 transition-all duration-300 text-sm font-semibold shadow-md border border-green-200 ${color} transform hover:scale-105`}
-                        title={label}
+                        onClick={() => handleReact(project.id, 'like')}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-full transition-all duration-300 text-sm font-semibold shadow-lg border-2 transform hover:scale-105 ${
+                          userReactions[project.id] === 'like'
+                            ? 'bg-blue-100 text-blue-600 border-blue-300'
+                            : 'bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-600 border-gray-200 hover:border-blue-300'
+                        }`}
                       >
-                        <Icon className="w-5 h-5" />
-                        <span className="font-bold">{reactionCounts[project.id]?.[type] || 0}</span>
+                        <HandThumbUpIcon className="w-5 h-5" />
+                        <span className="font-bold">Like</span>
+                        {reactionCounts[project.id]?.like > 0 && (
+                          <span className="bg-blue-500 text-white text-xs px-2 py-1 rounded-full ml-1">
+                            {reactionCounts[project.id].like}
+                          </span>
+                        )}
                       </button>
-                    ))}
-                    <div className="ml-auto flex items-center gap-2 bg-gradient-to-r from-blue-100 to-indigo-100 px-4 py-2 rounded-full border border-blue-200">
+
+                      {/* Dislike Button */}
+                      <button
+                        onClick={() => handleReact(project.id, 'dislike')}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-full transition-all duration-300 text-sm font-semibold shadow-lg border-2 transform hover:scale-105 ${
+                          userReactions[project.id] === 'dislike'
+                            ? 'bg-red-100 text-red-600 border-red-300'
+                            : 'bg-gray-100 hover:bg-red-100 text-gray-700 hover:text-red-600 border-gray-200 hover:border-red-300'
+                        }`}
+                      >
+                        <HandThumbDownIcon className="w-5 h-5" />
+                        <span className="font-bold">Dislike</span>
+                        {reactionCounts[project.id]?.dislike > 0 && (
+                          <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full ml-1">
+                            {reactionCounts[project.id].dislike}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Comments Count */}
+                    <div className="flex items-center gap-2 bg-gradient-to-r from-blue-100 to-indigo-100 px-4 py-2 rounded-full border border-blue-200">
                       <ChatBubbleLeftRightIcon className="w-5 h-5 text-blue-600" />
                       <span className="text-blue-800 font-semibold">{feedbacks[project.id]?.length || 0} Comments</span>
                     </div>
@@ -335,7 +426,7 @@ const Project = () => {
                     {(feedbacks[project.id]?.length || 0) > 3 && (
                       <button
                         className="flex items-center gap-3 text-blue-600 hover:text-blue-800 font-bold mt-4 mx-auto px-6 py-3 rounded-full bg-blue-50 hover:bg-blue-100 transition-all duration-300 shadow-md transform hover:scale-105"
-                        onClick={() => navigate(`/projects/${project.id}/comments`)}
+                        onClick={() => handleViewAllComments(project.id)}
                       >
                         <ChatBubbleLeftRightIcon className="w-5 h-5" />
                         View all comments
@@ -373,6 +464,112 @@ const Project = () => {
           </div>
         </div>
       </main>
+
+      {/* Comments Modal */}
+      {showCommentsModal && modalProjectId && (
+        <div 
+          className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={handleCloseCommentsModal}
+        >
+          <div 
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col transform transition-all animate-fade-in-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-t-3xl p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+                    <ChatBubbleLeftRightIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">Project Comments</h2>
+                    <p className="text-green-100">
+                      {projects.find(p => p.id === modalProjectId)?.name || 'Project'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleCloseCommentsModal}
+                  className="text-white hover:text-green-200 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-green-300 rounded-full p-2"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {/* Comments List */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {(feedbacks[modalProjectId] || []).length === 0 ? (
+                  <div className="text-center py-12">
+                    <ChatBubbleLeftRightIcon className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                    <p className="text-gray-500 text-lg font-semibold mb-2">No comments yet</p>
+                    <p className="text-gray-400">Be the first to share your thoughts about this project!</p>
+                  </div>
+                ) : (
+                  (feedbacks[modalProjectId] || []).map((fb) => (
+                    <div key={fb.id} className="bg-gradient-to-r from-gray-50 to-green-50 rounded-2xl p-6 border border-gray-100 shadow-lg hover:shadow-xl transition-all duration-300">
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-400 rounded-full flex items-center justify-center font-bold text-white text-lg shadow-lg">
+                          {fb.user?.name?.[0] || "R"}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="text-lg font-bold text-gray-900">{fb.user?.name || "Resident"}</div>
+                            <div className="text-sm text-gray-400 flex items-center gap-2">
+                              <CalendarIcon className="w-4 h-4" />
+                              {new Date(fb.created_at).toLocaleString()}
+                            </div>
+                          </div>
+                          <div className="text-gray-700 leading-relaxed text-base">{fb.message}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Add Comment Section */}
+              <div className="border-t border-gray-200 p-6 bg-gradient-to-r from-green-50 to-emerald-50">
+                <form onSubmit={handleAddModalComment} className="space-y-4">
+                  <label htmlFor="modal-comment-input" className="block text-lg font-bold text-green-700">
+                    Add Your Comment
+                  </label>
+                  <textarea
+                    id="modal-comment-input"
+                    value={modalCommentInput}
+                    onChange={(e) => setModalCommentInput(e.target.value)}
+                    placeholder="Share your thoughts about this project..."
+                    rows={3}
+                    className="w-full border-2 border-green-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-4 focus:ring-green-100 focus:border-green-500 resize-none bg-white transition-all duration-300 shadow-sm"
+                    required
+                  />
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={handleCloseCommentsModal}
+                      className="px-6 py-3 text-gray-600 hover:text-gray-800 font-semibold transition-colors duration-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-8 py-3 rounded-xl text-base font-bold transition-all duration-300 transform hover:scale-105 shadow-lg flex items-center gap-2"
+                    >
+                      <ChatBubbleLeftRightIcon className="w-5 h-5" />
+                      Post Comment
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
