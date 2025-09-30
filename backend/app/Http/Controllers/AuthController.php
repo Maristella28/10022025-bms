@@ -52,7 +52,7 @@ class AuthController extends Controller
                         'mobile_number' => $request->contact_number ?? $profile->mobile_number,
                         'sex' => $request->sex ?? $profile->sex,
                         'birth_date' => $request->birth_date ? \Carbon\Carbon::parse($request->birth_date)->format('Y-m-d') : $profile->birth_date,
-                        'current_address' => $request->address ?? $profile->current_address,
+                        'current_address' => $request->current_address ?? $profile->current_address,
                     ]);
                 } else {
                     // Create new profile
@@ -67,7 +67,7 @@ class AuthController extends Controller
                         'mobile_number' => $request->contact_number ?? '',
                         'sex' => $request->sex ?? '',
                         'birth_date' => $request->birth_date ? \Carbon\Carbon::parse($request->birth_date)->format('Y-m-d') : null,
-                        'current_address' => $request->address ?? '',
+                        'current_address' => $request->current_address ?? '',
                         'verification_status' => 'pending',
                         'profile_completed' => false,
                     ]);
@@ -116,8 +116,8 @@ class AuthController extends Controller
         }
 
         try {
-            // Generate 3-digit verification code
-            $verificationCode = str_pad(random_int(0, 999), 3, '0', STR_PAD_LEFT);
+            // Generate 6-digit verification code
+            $verificationCode = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
             
             \Log::info('Creating user with data:', [
                 'name' => $request->name,
@@ -132,7 +132,7 @@ class AuthController extends Controller
                 'password' => Hash::make($request->password),
                 'role' => $request->role ?? 'residents',
                 'verification_code' => $verificationCode,
-                'verification_code_expires_at' => now()->addMinutes(15),
+                'verification_code_expires_at' => now()->addMinutes(5),
                 'privacy_policy_accepted' => true,
                 'privacy_policy_accepted_at' => now(),
             ]);
@@ -214,14 +214,27 @@ class AuthController extends Controller
 
         $request->validate([
             'user_id' => 'required|exists:users,id',
-            'verification_code' => 'required|string|size:3',
+            'verification_code' => 'required|string|size:6',
         ]);
+
+        // Clean up expired verification codes first
+        User::cleanupExpiredVerificationCodes();
 
         $user = User::findOrFail($request->user_id);
 
         \Log::info('User before verification:', $user->toArray());
 
+        // Check if user has a verification code
+        if (!$user->verification_code) {
+            return response()->json(['message' => 'No verification code found. Please request a new one.', 'code_expired' => true], 400);
+        }
+
         if ($user->isVerificationCodeExpired()) {
+            // Clean up the expired code
+            $user->update([
+                'verification_code' => null,
+                'verification_code_expires_at' => null,
+            ]);
             return response()->json(['message' => 'Verification code has expired. Please request a new one.', 'code_expired' => true], 400);
         }
 
@@ -256,6 +269,9 @@ class AuthController extends Controller
             'user_id' => 'required|exists:users,id',
         ]);
 
+        // Clean up expired verification codes first
+        User::cleanupExpiredVerificationCodes();
+
         $user = User::findOrFail($request->user_id);
 
         // Check if user is already verified
@@ -274,11 +290,11 @@ class AuthController extends Controller
         }
 
         // Generate new verification code
-        $verificationCode = str_pad(random_int(0, 999), 3, '0', STR_PAD_LEFT);
+        $verificationCode = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         
         $user->update([
             'verification_code' => $verificationCode,
-            'verification_code_expires_at' => now()->addMinute(), // 1 minute expiry
+            'verification_code_expires_at' => now()->addMinutes(5), // 5 minutes expiry
         ]);
 
         // Send new verification code email
@@ -417,6 +433,65 @@ class AuthController extends Controller
         return response()->json([
             'user' => $request->user()->loadMissing('profile'),
         ]);
+    }
+
+    /**
+     * Validate name uniqueness (first_name + last_name combination)
+     */
+    public function validateNameUniqueness(Request $request)
+    {
+        $request->validate([
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+        ]);
+
+        $firstName = trim($request->first_name);
+        $lastName = trim($request->last_name);
+
+        // Check if a profile with the same first_name and last_name already exists (case-insensitive)
+        $existingProfile = \App\Models\Profile::whereRaw('LOWER(first_name) = ? AND LOWER(last_name) = ?', [
+            strtolower($firstName),
+            strtolower($lastName)
+        ])->first();
+
+        if ($existingProfile) {
+            return response()->json([
+                'is_unique' => false,
+                'message' => 'An account with this name already exists.'
+            ], 200);
+        }
+
+        return response()->json([
+            'is_unique' => true,
+            'message' => 'Name is available.'
+        ], 200);
+    }
+
+    /**
+     * Validate email uniqueness
+     */
+    public function validateEmailUniqueness(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email|max:255',
+        ]);
+
+        $email = trim($request->email);
+
+        // Check if a user with the same email already exists (case-insensitive)
+        $existingUser = User::whereRaw('LOWER(email) = ?', [strtolower($email)])->first();
+
+        if ($existingUser) {
+            return response()->json([
+                'is_unique' => false,
+                'message' => 'An account with this email already exists.'
+            ], 200);
+        }
+
+        return response()->json([
+            'is_unique' => true,
+            'message' => 'Email is available.'
+        ], 200);
     }
 
     /**

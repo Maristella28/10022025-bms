@@ -19,6 +19,7 @@ export const routeConfig = {
     
     // Additional admin-specific routes that were missing
     { path: "social-services", element: null, module: "socialServices" },
+    { path: "social-services/program/:id", element: null, module: "socialServices" },
     { path: "assets-management", element: null, module: "inventoryAssets" },
     { path: "officials-management", element: null, module: "barangayOfficials" },
     { path: "staff-management", element: null, module: "staffManagement" },
@@ -44,11 +45,13 @@ export const routeConfig = {
     { path: "staff", element: null, module: "organizationalChart" },
     { path: "charterList", element: null, module: "blotterAppointment" },
     { path: "myBenefits", element: null, module: "myBenefits" },
-    { path: "addFeedback", element: null, module: "addFeedback" }
+    { path: "addFeedback", element: null, module: "addFeedback" },
+    { path: "modules/Programs/ProgramAnnouncements", element: null, module: "programAnnouncements" }
   ],
   
   // Special paths that don't require module permissions
   unrestricted: [
-    "edit-profile"
+    "edit-profile",
+    "modules/Programs/ProgramAnnouncements"
   ]
 };

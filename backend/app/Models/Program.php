@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Program extends Model
 {
@@ -11,6 +12,7 @@ class Program extends Model
 
     protected $fillable = [
         'name',
+        'title',
         'description',
         'start_date',
         'end_date',
@@ -26,4 +28,14 @@ class Program extends Model
         'end_date' => 'date',
         'max_beneficiaries' => 'integer',
     ];
+
+    public function applicationForms(): HasMany
+    {
+        return $this->hasMany(ProgramApplicationForms::class);
+    }
+
+    public function announcements(): HasMany
+    {
+        return $this->hasMany(ProgramAnnouncement::class);
+    }
 }

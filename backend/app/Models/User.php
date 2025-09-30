@@ -138,6 +138,19 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Clean up expired verification codes
+     */
+    public static function cleanupExpiredVerificationCodes()
+    {
+        return static::whereNotNull('verification_code')
+            ->where('verification_code_expires_at', '<', now())
+            ->update([
+                'verification_code' => null,
+                'verification_code_expires_at' => null,
+            ]);
+    }
+
+    /**
      * Check if user is fully registered (email verified)
      */
     public function isFullyRegistered()

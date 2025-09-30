@@ -2,15 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { HeartIcon, ChartBarIcon, UserIcon, CalendarIcon, DocumentTextIcon, ArrowPathIcon, MagnifyingGlassIcon, FunnelIcon, EyeIcon, PencilIcon, TrashIcon, PlusIcon, XMarkIcon, CheckCircleIcon, ClockIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import axios from '../../../../utils/axiosConfig';
 
-// Use relative URLs to leverage Vite proxy
+// Use axios for consistent API handling
 const fetchPrograms = async () => {
-  const res = await fetch('/api/programs');
-  return await res.json();
+  try {
+    const res = await axios.get('/admin/programs');
+    return res.data || [];
+  } catch (error) {
+    console.error('Error fetching programs:', error);
+    return [];
+  }
 };
+
 const fetchBeneficiaries = async () => {
-  const res = await fetch('/api/beneficiaries');
-  return await res.json();
+  try {
+    const res = await axios.get('/beneficiaries');
+    return res.data || [];
+  } catch (error) {
+    console.error('Error fetching beneficiaries:', error);
+    return [];
+  }
 };
 
 const SocialServices = () => {
@@ -108,15 +120,11 @@ const SocialServices = () => {
   const handleDeleteProgram = async (programId) => {
     if (!window.confirm('Are you sure you want to delete this program?')) return;
     try {
-      const res = await fetch(`/api/programs/${programId}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        alert('Failed to delete program.');
-        return;
-      }
-      fetchPrograms().then(setPrograms);
+      await axios.delete(`/admin/programs/${programId}`);
+      const updatedPrograms = await fetchPrograms();
+      setPrograms(updatedPrograms);
     } catch (err) {
+      console.error('Error deleting program:', err);
       alert('Failed to delete program. ' + (err?.message || ''));
     }
   };
@@ -1078,38 +1086,34 @@ const SocialServices = () => {
                       setProgramFormSuccess('');
                       setProgramFormLoading(true);
                       try {
-                        let url = '/api/programs';
-                        let method = 'POST';
+                        const data = {
+                          name: programForm.name,
+                          description: programForm.description,
+                          start_date: programForm.startDate,
+                          end_date: programForm.endDate,
+                          status: programForm.status,
+                          beneficiary_type: programForm.beneficiaryType,
+                          assistance_type: programForm.assistanceType,
+                          amount: programForm.amount,
+                          max_beneficiaries: programForm.maxBeneficiaries,
+                        };
+
                         if (editProgram && editProgram.id) {
-                          url = `/api/programs/${editProgram.id}`;
-                          method = 'PUT';
+                          await axios.put(`/admin/programs/${editProgram.id}`, data);
+                        } else {
+                          await axios.post('/admin/programs', data);
                         }
-                        const res = await fetch(url, {
-                          method,
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            name: programForm.name,
-                            description: programForm.description,
-                            start_date: programForm.startDate,
-                            end_date: programForm.endDate,
-                            status: programForm.status,
-                            beneficiary_type: programForm.beneficiaryType,
-                            assistance_type: programForm.assistanceType,
-                            amount: programForm.amount,
-                            max_beneficiaries: programForm.maxBeneficiaries,
-                          }),
-                        });
-                        const data = await res.json().catch(() => ({}));
-                        if (!res.ok) {
-                          setProgramFormError(data?.message || (editProgram && editProgram.id ? 'Failed to update program.' : 'Failed to add program.'));
-                          return;
-                        }
+                        
                         setProgramFormSuccess(editProgram && editProgram.id ? 'Program updated successfully!' : 'Program added successfully!');
                         setShowProgramModal(false);
                         setProgramForm({ name: '', description: '', startDate: '', endDate: '', status: '', beneficiaryType: '', assistanceType: '', amount: '', maxBeneficiaries: '' });
-                        fetchPrograms().then(setPrograms);
+                        
+                        // Refresh programs list
+                        const updatedPrograms = await fetchPrograms();
+                        setPrograms(updatedPrograms);
                       } catch (err) {
-                        setProgramFormError((editProgram && editProgram.id ? 'Failed to update program. ' : 'Failed to add program. ') + (err?.message || ''));
+                        console.error('Error saving program:', err);
+                        setProgramFormError((editProgram && editProgram.id ? 'Failed to update program. ' : 'Failed to add program. ') + (err?.response?.data?.message || err?.message || ''));
                       } finally {
                         setProgramFormLoading(false);
                       }

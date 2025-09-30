@@ -87,6 +87,10 @@ Route::get('/profile-debug', function(Request $request) {
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']); // Returns Bearer token
 
+// Name and email uniqueness validation
+Route::post('/validate-name-uniqueness', [AuthController::class, 'validateNameUniqueness']);
+Route::post('/validate-email-uniqueness', [AuthController::class, 'validateEmailUniqueness']);
+
 // 🔐 New Verification Code Routes
 Route::post('/verify-registration', [AuthController::class, 'verifyRegistration']);
 Route::post('/resend-verification-code', [AuthController::class, 'resendVerificationCode']);
@@ -267,12 +271,23 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
         // Toggle My Benefits permission for a resident (admin only)
         Route::post('/residents/{id}/toggle-my-benefits', [\App\Http\Controllers\ResidentBenefitsController::class, 'toggle']);
 
-    // 🏠 Household management
-    Route::get('/households', [\App\Http\Controllers\HouseholdController::class, 'index']);
-    Route::post('/households', [\App\Http\Controllers\HouseholdController::class, 'store']);
-    Route::get('/households/{id}', [\App\Http\Controllers\HouseholdController::class, 'show']);
-    Route::put('/households/{id}', [\App\Http\Controllers\HouseholdController::class, 'update']);
-    Route::delete('/households/{id}', [\App\Http\Controllers\HouseholdController::class, 'destroy']);
+        // 🎯 Programs Management (Admin only)
+        Route::apiResource('programs', App\Http\Controllers\ProgramController::class);
+        
+        // Program Application Forms (Admin only)
+        Route::apiResource('program-application-forms', App\Http\Controllers\ProgramApplicationFormController::class);
+        Route::post('/program-application-forms/{id}/publish', [App\Http\Controllers\ProgramApplicationFormController::class, 'publish']);
+        
+        // Program Announcements (Admin only)
+        Route::apiResource('program-announcements', App\Http\Controllers\ProgramAnnouncementController::class);
+        Route::post('/program-announcements/{id}/publish', [App\Http\Controllers\ProgramAnnouncementController::class, 'publish']);
+
+        // 🏠 Household management
+        Route::get('/households', [\App\Http\Controllers\HouseholdController::class, 'index']);
+        Route::post('/households', [\App\Http\Controllers\HouseholdController::class, 'store']);
+        Route::get('/households/{id}', [\App\Http\Controllers\HouseholdController::class, 'show']);
+        Route::put('/households/{id}', [\App\Http\Controllers\HouseholdController::class, 'update']);
+        Route::delete('/households/{id}', [\App\Http\Controllers\HouseholdController::class, 'destroy']);
     });
     /*
     |--------------------------------------------------------------------------
@@ -448,6 +463,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/feedbacks', [App\Http\Controllers\FeedbackController::class, 'store']);
     Route::get('/feedbacks/my', [App\Http\Controllers\FeedbackController::class, 'myFeedback']);
     Route::get('/feedbacks', [App\Http\Controllers\FeedbackController::class, 'index']); // Allow filtering by project_id
+    
+    // Program Announcements (for residents)
+    Route::get('/program-announcements', [App\Http\Controllers\ProgramAnnouncementController::class, 'index']);
+    Route::get('/program-announcements/residents/dashboard', [App\Http\Controllers\ProgramAnnouncementController::class, 'getForResidents']);
+    
+    // Program Application Forms (for residents)
+    Route::get('/program-application-forms', [App\Http\Controllers\ProgramApplicationFormController::class, 'index']);
+    Route::get('/program-application-forms/published', [App\Http\Controllers\ProgramApplicationFormController::class, 'getPublishedForms']);
+    Route::post('/program-application-forms/{id}/submit', [App\Http\Controllers\ProgramApplicationFormController::class, 'submitApplication']);
+    
+    // Programs (for residents - only non-draft programs)
+    Route::get('/programs/residents', [App\Http\Controllers\ProgramController::class, 'getForResidents']);
+    Route::get('/programs/{id}', [App\Http\Controllers\ProgramController::class, 'show']);
 });
 
 // ✅ **New Backend Structure for Disaster/Emergency Records**
@@ -547,4 +575,8 @@ Route::get('/test-pdf', function () {
     return $pdf->download('test-receipt.pdf');
 });
 Route::apiResource('disbursements', App\Http\Controllers\DisbursementController::class);
-Route::apiResource('programs', App\Http\Controllers\ProgramController::class);
+
+// Program Announcements (Admin only - moved to auth middleware group above)
+
+// Program Application Forms (Admin only - outside auth middleware for admin access)
+// Note: Moved to auth middleware group below for resident access

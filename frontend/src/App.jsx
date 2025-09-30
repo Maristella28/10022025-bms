@@ -47,6 +47,7 @@ const Staff = lazy(() => import('./pages/residents/modules/OrganizationalChart/S
 const CharterList = lazy(() => import('./pages/residents/CharterList'));
 const MyBenefits = lazy(() => import('./pages/residents/MyBenefits'));
 const AddFeedback = lazy(() => import('./pages/residents/AddFeedback'));
+const ProgramAnnouncements = lazy(() => import('./pages/residents/modules/Programs/ProgramAnnouncements'));
 
 // Lazy load module pages
 const ProgramDetails = lazy(() => import('./pages/admin/modules/SocialServices/ProgramDetails'));
@@ -101,7 +102,8 @@ const residentRoutesWithComponents = routeConfig.residents.map(route => ({
     "staff": withSuspense(<Staff />),
     "charterList": withSuspense(<CharterList />),
     "myBenefits": withSuspense(<MyBenefits />),
-    "addFeedback": withSuspense(<AddFeedback />)
+    "addFeedback": withSuspense(<AddFeedback />),
+    "modules/Programs/ProgramAnnouncements": withSuspense(<ProgramAnnouncements />)
   }[route.path] || withSuspense(<div>Page under construction</div>) // Fallback for missing components
 }));
 
@@ -147,25 +149,48 @@ const RoleBasedRoutes = () => {
     
     if (!user) return <div>Loading...</div>;
     
-    // Get the current path (e.g., "dashboard", "profile", etc.)
-    const currentPath = location.pathname.split('/').pop();
+    // Get the current path - handle both single segments and nested paths
+    const pathSegments = location.pathname.split('/').filter(segment => segment !== '');
     
     // For residents, render resident routes
     if (user.role === 'residents' || user.role === 'resident') {
-      const residentRoute = routeConfig.residents?.find(route => route.path === currentPath);
+      // Remove the role from the path segments for matching
+      const pathWithoutRole = pathSegments.slice(1).join('/');
+      
+      // First try to find exact match with role removed
+      let residentRoute = routeConfig.residents?.find(route => route.path === pathWithoutRole);
+      
+      if (residentRoute) {
+        return residentRoute.element;
+      }
+      
+      // If no exact match, try to find by last segment (for backward compatibility)
+      const lastSegment = pathSegments[pathSegments.length - 1];
+      residentRoute = routeConfig.residents?.find(route => route.path === lastSegment);
+      
       if (residentRoute) {
         return residentRoute.element;
       }
     } else {
       // For admin/staff, render common routes
-      const commonRoute = routeConfig.common.find(route => route.path === currentPath);
+      const pathWithoutRole = pathSegments.slice(1).join('/');
+      
+      let commonRoute = routeConfig.common.find(route => route.path === pathWithoutRole);
+      
+      // If no exact match, try to find by last segment
+      if (!commonRoute) {
+        const lastSegment = pathSegments[pathSegments.length - 1];
+        commonRoute = routeConfig.common.find(route => route.path === lastSegment);
+      }
+      
       if (commonRoute) {
         return commonRoute.element;
       }
     }
     
     // Special routes
-    if (currentPath === 'edit-profile') {
+    const pathWithoutRole = pathSegments.slice(1).join('/');
+    if (pathWithoutRole === 'edit-profile') {
       return withSuspense(<AdminEditProfile />);
     }
     
@@ -215,6 +240,10 @@ function App() {
           
           {/* Household Management Routes */}
           <Route path="/admin/modules/Household/CreateHousehold" element={<ProtectedRoute role="admin">{withSuspense(<CreateHousehold />)}</ProtectedRoute>} />
+          
+          {/* Program Announcements Route - Must be before dynamic routes to avoid conflicts */}
+          <Route path="/residents/modules/Programs/ProgramAnnouncements" element={<ProtectedRoute>{withSuspense(<ProgramAnnouncements />)}</ProtectedRoute>} />
+          <Route path="/residents/modules/Programs/ProgramAnnouncements/*" element={<ProtectedRoute>{withSuspense(<ProgramAnnouncements />)}</ProtectedRoute>} />
 
           {/* Dynamic Layout Routes */}
           <Route 

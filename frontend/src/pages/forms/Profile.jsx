@@ -105,6 +105,7 @@ const Profile = () => {
     year_vaccinated: '',
     residency_verification_image: null,
     verification_status: null,
+    employment_status: 'manual', // 'manual' or 'na'
   });
 
 
@@ -281,6 +282,8 @@ const Profile = () => {
             mobile_number: profile.mobile_number ?? profile.contact_number ?? '',
             current_address: profile.current_address ?? profile.full_address ?? '',
             current_photo: currentPhoto,
+            // Set employment status based on existing data
+            employment_status: (profile.occupation_type === 'Not Applicable' && profile.salary_income === 'N/A') ? 'na' : 'manual',
           };
           
           // Calculate age from birth date if not already set
@@ -347,6 +350,7 @@ const Profile = () => {
                 mobile_number: fullProfile.mobile_number ?? fullProfile.contact_number ?? '',
                 current_address: fullProfile.current_address ?? fullProfile.full_address ?? '',
                 current_photo: fullProfile.current_photo || fullProfile.avatar || null,
+                employment_status: (fullProfile.occupation_type === 'Not Applicable' && fullProfile.salary_income === 'N/A') ? 'na' : 'manual',
               }));
             }
           } catch (error) {
@@ -453,6 +457,7 @@ const Profile = () => {
                 current_address: profile.current_address ?? profile.full_address ?? '',
                 current_photo: currentPhoto,
                 profile_completed: profile.profile_completed, // Ensure profile_completed status is updated
+                employment_status: (profile.occupation_type === 'Not Applicable' && profile.salary_income === 'N/A') ? 'na' : 'manual',
               };
               console.log('[DEBUG] Updated form state after save:', newForm);
               console.log('[DEBUG] Profile completed status:', profile.profile_completed);
@@ -931,15 +936,24 @@ const ReadOnlyView = ({ form, setIsEditing, onEditClick }) => {
         </div>
       </div>
 
-      {/* Education & Employment */}
+      {/* Education */}
       <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
         <h3 className="text-xl font-bold text-green-800 mb-6 flex items-center gap-2">
           <Landmark className="w-5 h-5" />
-          Education & Employment
+          Education
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <InfoCard icon={<User className="w-5 h-5" />} label="Educational Attainment" value={form.educational_attainment || '—'} />
           <InfoCard icon={<User className="w-5 h-5" />} label="Classified Sector" value={form.classified_sector || '—'} />
+        </div>
+      </div>
+
+      {/* Employment */}
+      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h3 className="text-xl font-bold text-green-800 mb-6 flex items-center gap-2">
+          💼 Employment
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <InfoCard icon={<User className="w-5 h-5" />} label="Occupation Type" value={form.occupation_type || '—'} />
           <InfoCard icon={<User className="w-5 h-5" />} label="Salary/Income" value={form.salary_income || '—'} />
         </div>
@@ -1100,7 +1114,10 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
       'current_address', 'years_in_barangay'
     ],
     education: [
-      'classified_sector', 'educational_attainment', 'occupation_type', 'salary_income'
+      'educational_attainment', 'classified_sector'
+    ],
+    employment: [
+      'occupation_type', 'salary_income'
     ],
     voter: [
       'voter_status', 'voters_id_number', 'voting_location'
@@ -1115,6 +1132,7 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
     ...requiredFields.personal,
     ...requiredFields.address,
     ...requiredFields.education,
+    ...requiredFields.employment,
     ...requiredFields.voter,
     ...requiredFields.profile
   ];
@@ -1655,6 +1673,22 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
           )}
         </div>
       </div>
+
+      {/* Head of Family checkbox */}
+      <div className="mt-6">
+        <div className="flex items-center gap-6">
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              name="head_of_family"
+              checked={!!form.head_of_family}
+              onChange={handleChange}
+              className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+            />
+            <span className="text-sm font-semibold text-gray-700">Head of the Family</span>
+          </label>
+        </div>
+      </div>
     </div>
 
     {/* Address Section */}
@@ -1741,69 +1775,17 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
 
         </div>
 
-        <div className="flex items-center gap-6">
-          <label className="flex items-center gap-3 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              name="head_of_family"
-              checked={!!form.head_of_family}
-              onChange={handleChange}
-              className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
-            />
-            <span className="text-sm font-semibold text-gray-700">Head of the Family</span>
-          </label>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">Relation to the Head of the Family</label>
-          <input
-            type="text"
-            name="relation_to_head"
-            value={form.relation_to_head || ''}
-            onChange={handleChange}
-            placeholder="e.g., Daughter, Son, Father"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
-          />
-        </div>
       </div>
     </div>
 
-    {/* Education & Employment Section */}
+    {/* Education Section */}
     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
       <h3 className="text-xl font-bold text-green-800 mb-6 flex items-center gap-2">
         <Landmark className="w-5 h-5" />
-        Education & Employment
+        Education
       </h3>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">
-            Classified Sector
-            {isFieldRequired('classified_sector') && <span className="text-red-500 ml-1">*</span>}
-          </label>
-          <select
-            name="classified_sector"
-            value={form.classified_sector}
-            onChange={handleChange}
-            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('classified_sector')}`}
-            required={isFieldRequired('classified_sector')}
-          >
-            <option value="">Select Sector</option>
-            <option>Labor Force/Employed</option>
-            <option>Self-Employed</option>
-            <option>Unemployed</option>
-            <option>Student</option>
-            <option>Out-of-School Youth (OSY)</option>
-            <option>Out-of-School Children (OSC)</option>
-            <option>Not Applicable</option>
-          </select>
-          {isFieldRequired('classified_sector') && !form.classified_sector && (
-            <div className="text-xs text-red-600">
-              This field is required
-            </div>
-          )}
-        </div>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-700">
             Educational Attainment
@@ -1832,6 +1814,93 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
 
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-700">
+            Classified Sector
+            {isFieldRequired('classified_sector') && <span className="text-red-500 ml-1">*</span>}
+          </label>
+          <select
+            name="classified_sector"
+            value={form.classified_sector}
+            onChange={handleChange}
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('classified_sector')}`}
+            required={isFieldRequired('classified_sector')}
+          >
+            <option value="">Select Sector</option>
+            <option>Labor Force/Employed</option>
+            <option>Self-Employed</option>
+            <option>Unemployed</option>
+            <option>Student</option>
+            <option>Out-of-School Youth (OSY)</option>
+            <option>Out-of-School Children (OSC)</option>
+            <option>Not Applicable</option>
+          </select>
+          {isFieldRequired('classified_sector') && !form.classified_sector && (
+            <div className="text-xs text-red-600">
+              This field is required
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+
+    {/* Employment Section */}
+    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+      <h3 className="text-xl font-bold text-green-800 mb-6 flex items-center gap-2">
+        💼 Employment
+      </h3>
+      
+      {/* N/A Option */}
+      <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="flex items-center space-x-3">
+          <input
+            type="checkbox"
+            id="employment_na"
+            checked={form.employment_status === 'na'}
+            onChange={(e) => {
+              if (e.target.checked) {
+                handleChange({
+                  target: {
+                    name: 'employment_status',
+                    value: 'na'
+                  }
+                });
+                // Auto-fill with N/A values
+                setTimeout(() => {
+                  handleChange({ target: { name: 'occupation_type', value: 'Not Applicable' } });
+                  handleChange({ target: { name: 'salary_income', value: 'N/A' } });
+                  handleChange({ target: { name: 'business_info', value: 'N/A' } });
+                  handleChange({ target: { name: 'business_type', value: 'N/A' } });
+                  handleChange({ target: { name: 'business_location', value: 'N/A' } });
+                  handleChange({ target: { name: 'business_outside_barangay', value: false } });
+                }, 0);
+              } else {
+                handleChange({
+                  target: {
+                    name: 'employment_status',
+                    value: 'manual'
+                  }
+                });
+                // Clear fields when unchecked
+                setTimeout(() => {
+                  handleChange({ target: { name: 'occupation_type', value: '' } });
+                  handleChange({ target: { name: 'salary_income', value: '' } });
+                  handleChange({ target: { name: 'business_info', value: '' } });
+                  handleChange({ target: { name: 'business_type', value: '' } });
+                  handleChange({ target: { name: 'business_location', value: '' } });
+                  handleChange({ target: { name: 'business_outside_barangay', value: false } });
+                }, 0);
+              }
+            }}
+            className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+          />
+          <label htmlFor="employment_na" className="text-sm font-semibold text-gray-700 cursor-pointer">
+            Not Applicable - Fill all fields with N/A
+          </label>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-gray-700">
             Occupation Type
             {isFieldRequired('occupation_type') && <span className="text-red-500 ml-1">*</span>}
           </label>
@@ -1839,7 +1908,8 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             name="occupation_type"
             value={form.occupation_type}
             onChange={handleChange}
-            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('occupation_type')}`}
+            disabled={form.employment_status === 'na'}
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${form.employment_status === 'na' ? 'bg-gray-100 cursor-not-allowed' : ''} ${getFieldValidationClass('occupation_type')}`}
             required={isFieldRequired('occupation_type')}
           >
             <option value="">Select Occupation</option>
@@ -1872,7 +1942,8 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             value={form.salary_income}
             onChange={handleChange}
             placeholder="e.g. ₱15,000/month"
-            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${getFieldValidationClass('salary_income')}`}
+            disabled={form.employment_status === 'na'}
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 transition-all duration-200 shadow-sm hover:shadow-md ${form.employment_status === 'na' ? 'bg-gray-100 cursor-not-allowed' : ''} ${getFieldValidationClass('salary_income')}`}
             required={isFieldRequired('salary_income')}
           />
           {isFieldRequired('salary_income') && !form.salary_income && (
@@ -1892,10 +1963,13 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             value={form.business_info}
             onChange={handleChange}
             placeholder="e.g. ABC Marketing Services"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            disabled={form.employment_status === 'na'}
+            className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md ${form.employment_status === 'na' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
           />
         </div>
+      </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-700">
             Business Type
@@ -1906,12 +1980,11 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             value={form.business_type}
             onChange={handleChange}
             placeholder="e.g. Retail, Freelance"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            disabled={form.employment_status === 'na'}
+            className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md ${form.employment_status === 'na' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
           />
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-700">
             Business Location
@@ -1922,7 +1995,8 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             value={form.business_location}
             onChange={handleChange}
             placeholder="e.g. Zone 2, Brgy. Example"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md"
+            disabled={form.employment_status === 'na'}
+            className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow-md ${form.employment_status === 'na' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
           />
         </div>
 
@@ -1932,7 +2006,8 @@ const EditableForm = ({ form, handleChange, handleSubmit, setIsEditing, submitti
             name="business_outside_barangay"
             checked={form.business_outside_barangay}
             onChange={handleChange}
-            className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+            disabled={form.employment_status === 'na'}
+            className={`w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 ${form.employment_status === 'na' ? 'cursor-not-allowed opacity-50' : ''}`}
           />
           <label className="text-sm font-semibold text-gray-700">
             Business Outside Barangay

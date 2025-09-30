@@ -4,24 +4,53 @@ import useResidents from '../../../../hooks/useResidents';
 import axiosInstance from '../../../../utils/axiosConfig';
 import Navbar from '../../../../components/Navbar';
 import Sidebar from '../../../../components/Sidebar';
+import FormBuilder from '../../../../components/FormBuilder';
 
 // Use relative URLs to leverage Vite proxy
 
-// Fetch programs with credentials for Sanctum
+// Fetch programs using axios
 const fetchPrograms = async () => {
-  const res = await fetch('/api/programs', {
-    credentials: 'include',
-  });
-  return await res.json();
+  try {
+    const res = await axiosInstance.get('/admin/programs');
+    return res.data || [];
+  } catch (error) {
+    console.error('Error fetching programs:', error);
+    return [];
+  }
 };
 
 // Fetch beneficiaries for a program
 const fetchBeneficiaries = async (programId) => {
-  const res = await fetch('/api/beneficiaries', {
-    credentials: 'include',
-  });
-  const all = await res.json();
-  return all.filter((b) => String(b.program_id) === String(programId));
+  try {
+    const res = await axiosInstance.get('/beneficiaries');
+    const all = res.data || [];
+    return all.filter((b) => String(b.program_id) === String(programId));
+  } catch (error) {
+    console.error('Error fetching beneficiaries:', error);
+    return [];
+  }
+};
+
+// Fetch announcements for a program
+const fetchAnnouncements = async (programId) => {
+  try {
+    const res = await axiosInstance.get(`/admin/program-announcements?program_id=${programId}`);
+    return res.data?.success ? res.data.data : [];
+  } catch (error) {
+    console.error('Error fetching announcements:', error);
+    return [];
+  }
+};
+
+// Fetch application forms for a program
+const fetchApplicationForms = async (programId) => {
+  try {
+    const res = await axiosInstance.get(`/admin/program-application-forms?program_id=${programId}`);
+    return res.data?.success ? res.data.data : [];
+  } catch (error) {
+    console.error('Error fetching application forms:', error);
+    return [];
+  }
 };
 
 const ProgramDetails = () => {
@@ -35,6 +64,18 @@ const ProgramDetails = () => {
   const [beneficiaries, setBeneficiaries] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [toast, setToast] = useState(null); // { type: 'success'|'error', message }
+  
+  // Announcements state
+  const [announcements, setAnnouncements] = useState([]);
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+  const [editingAnnouncement, setEditingAnnouncement] = useState(null);
+  
+  // Application forms state
+  const [applicationForms, setApplicationForms] = useState([]);
+  const [showFormBuilderModal, setShowFormBuilderModal] = useState(false);
+  const [editingForm, setEditingForm] = useState(null);
+  const [showSubmissionsModal, setShowSubmissionsModal] = useState(false);
+  const [selectedFormSubmissions, setSelectedFormSubmissions] = useState([]);
 
   // Form state
   const [form, setForm] = useState({
@@ -189,15 +230,26 @@ const ProgramDetails = () => {
   };
 
   useEffect(() => {
-    // First fetch CSRF cookie for Sanctum
-    fetch('/sanctum/csrf-cookie', { credentials: 'include' })
-      .then(() => {
-        fetchPrograms().then((programs) => {
-          const found = programs.find((p) => String(p.id) === String(id));
-          setProgram(found);
-        });
-        fetchBeneficiaries(id).then(setBeneficiaries);
-      });
+    const loadData = async () => {
+      try {
+        const programs = await fetchPrograms();
+        const found = programs.find((p) => String(p.id) === String(id));
+        setProgram(found);
+        
+        const beneficiaries = await fetchBeneficiaries(id);
+        setBeneficiaries(beneficiaries);
+        
+        const announcements = await fetchAnnouncements(id);
+        setAnnouncements(announcements);
+        
+        const applicationForms = await fetchApplicationForms(id);
+        setApplicationForms(applicationForms);
+      } catch (error) {
+        console.error('Error loading program data:', error);
+      }
+    };
+    
+    loadData();
   }, [id]);
 
 
@@ -384,6 +436,145 @@ const ProgramDetails = () => {
   };
 
   const suggestions = generateSuggestions();
+
+  // Announcement handlers
+  const createAnnouncement = async (announcementData) => {
+    try {
+      const response = await axiosInstance.post('/admin/program-announcements', {
+        ...announcementData,
+        program_id: id,
+      });
+
+      setAnnouncements([...announcements, response.data.data]);
+      setToast({ type: 'success', message: 'Announcement created successfully!' });
+      setShowAnnouncementModal(false);
+    } catch (error) {
+      console.error('Error creating announcement:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to create announcement' });
+    }
+  };
+
+  const editAnnouncement = (announcement) => {
+    setEditingAnnouncement(announcement);
+    setShowAnnouncementModal(true);
+  };
+
+  const updateAnnouncement = async (announcementData) => {
+    try {
+      const response = await axiosInstance.put(`/admin/program-announcements/${editingAnnouncement.id}`, announcementData);
+
+      setAnnouncements(announcements.map(a => a.id === editingAnnouncement.id ? response.data.data : a));
+      setEditingAnnouncement(null);
+      setShowAnnouncementModal(false);
+      setToast({ type: 'success', message: 'Announcement updated successfully!' });
+    } catch (error) {
+      console.error('Error updating announcement:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to update announcement' });
+    }
+  };
+
+  const publishAnnouncement = async (announcementId) => {
+    try {
+      const response = await axiosInstance.post(`/admin/program-announcements/${announcementId}/publish`);
+
+      setAnnouncements(announcements.map(a => a.id === announcementId ? response.data.data : a));
+      setToast({ 
+        type: 'success', 
+        message: 'Announcement published successfully! Residents can now see this program on their dashboard.' 
+      });
+    } catch (error) {
+      console.error('Error publishing announcement:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to publish announcement' });
+    }
+  };
+
+  const deleteAnnouncement = async (announcementId) => {
+    if (!window.confirm('Are you sure you want to delete this announcement?')) return;
+
+    try {
+      await axiosInstance.delete(`/admin/program-announcements/${announcementId}`);
+      setAnnouncements(announcements.filter(a => a.id !== announcementId));
+      setToast({ type: 'success', message: 'Announcement deleted successfully!' });
+    } catch (error) {
+      console.error('Error deleting announcement:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to delete announcement' });
+    }
+  };
+
+  // Application form handlers
+  const createForm = async (formData) => {
+    try {
+      const response = await axiosInstance.post('/admin/program-application-forms', {
+        ...formData,
+        program_id: id,
+      });
+
+      setApplicationForms([...applicationForms, response.data.data]);
+      setToast({ type: 'success', message: 'Application form created successfully!' });
+      setShowFormBuilderModal(false);
+    } catch (error) {
+      console.error('Error creating application form:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to create application form' });
+    }
+  };
+
+  const editForm = (form) => {
+    setEditingForm(form);
+    setShowFormBuilderModal(true);
+  };
+
+  const updateForm = async (formData) => {
+    try {
+      const response = await axiosInstance.put(`/admin/program-application-forms/${editingForm.id}`, formData);
+
+      setApplicationForms(applicationForms.map(f => f.id === editingForm.id ? response.data.data : f));
+      setEditingForm(null);
+      setShowFormBuilderModal(false);
+      setToast({ type: 'success', message: 'Application form updated successfully!' });
+    } catch (error) {
+      console.error('Error updating application form:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to update application form' });
+    }
+  };
+
+  const publishForm = async (formId) => {
+    try {
+      const response = await axiosInstance.post(`/admin/program-application-forms/${formId}/publish`);
+
+      setApplicationForms(applicationForms.map(f => f.id === formId ? response.data.data : f));
+      setToast({ 
+        type: 'success', 
+        message: 'Application form published successfully! Residents can now apply for this program.' 
+      });
+    } catch (error) {
+      console.error('Error publishing application form:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to publish application form' });
+    }
+  };
+
+  const viewSubmissions = async (formId) => {
+    try {
+      const response = await axiosInstance.get(`/admin/program-application-forms/${formId}`);
+      setSelectedFormSubmissions(response.data.data.submissions || []);
+      setShowSubmissionsModal(true);
+    } catch (error) {
+      console.error('Error loading submissions:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to load submissions' });
+    }
+  };
+
+  const deleteForm = async (formId) => {
+    if (!window.confirm('Are you sure you want to delete this application form?')) return;
+
+    try {
+      await axiosInstance.delete(`/admin/program-application-forms/${formId}`);
+      setApplicationForms(applicationForms.filter(f => f.id !== formId));
+      setToast({ type: 'success', message: 'Application form deleted successfully!' });
+    } catch (error) {
+      console.error('Error deleting application form:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to delete application form' });
+    }
+  };
 
   return (
     <>
@@ -582,6 +773,165 @@ const ProgramDetails = () => {
           </button>
         </div>
 
+        {/* Announcements Management */}
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-white font-semibold text-lg">Program Announcements</h3>
+              <button
+                className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200"
+                onClick={() => setShowAnnouncementModal(true)}
+              >
+                + Create Announcement
+              </button>
+            </div>
+          </div>
+          <div className="p-6">
+            {announcements.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                No announcements created yet.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {announcements.map((announcement) => (
+                  <div key={announcement.id} className={`p-4 rounded-lg border-l-4 ${
+                    announcement.is_urgent ? 'bg-red-50 border-red-400' : 'bg-gray-50 border-gray-300'
+                  }`}>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h4 className="font-semibold text-gray-900">{announcement.title}</h4>
+                          {announcement.is_urgent && (
+                            <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full font-medium">
+                              URGENT
+                            </span>
+                          )}
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            announcement.status === 'published' ? 'bg-green-100 text-green-800' :
+                            announcement.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {announcement.status.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-gray-600 text-sm mb-2">{announcement.content}</p>
+                        <div className="text-xs text-gray-500">
+                          Published: {announcement.published_at ? new Date(announcement.published_at).toLocaleDateString() : 'Not published'}
+                          {announcement.expires_at && (
+                            <span> • Expires: {new Date(announcement.expires_at).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 ml-4">
+                        <button
+                          className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200 transition-colors"
+                          onClick={() => editAnnouncement(announcement)}
+                        >
+                          Edit
+                        </button>
+                        {announcement.status === 'draft' && (
+                          <button
+                            className="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200 transition-colors"
+                            onClick={() => publishAnnouncement(announcement.id)}
+                          >
+                            Publish
+                          </button>
+                        )}
+                        <button
+                          className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200 transition-colors"
+                          onClick={() => deleteAnnouncement(announcement.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Application Forms Management */}
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+          <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-white font-semibold text-lg">Application Forms</h3>
+              <button
+                className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200"
+                onClick={() => setShowFormBuilderModal(true)}
+              >
+                + Create Form
+              </button>
+            </div>
+          </div>
+          <div className="p-6">
+            {applicationForms.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                No application forms created yet.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {applicationForms.map((form) => (
+                  <div key={form.id} className="p-4 rounded-lg border border-gray-200 bg-gray-50">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h4 className="font-semibold text-gray-900">{form.title}</h4>
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            form.status === 'published' ? 'bg-green-100 text-green-800' :
+                            form.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {form.status.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-gray-600 text-sm mb-2">{form.description}</p>
+                        <div className="text-xs text-gray-500">
+                          Fields: {form.fields?.length || 0} • 
+                          Submissions: {form.submissions?.length || 0} • 
+                          Published: {form.published_at ? new Date(form.published_at).toLocaleDateString() : 'Not published'}
+                          {form.deadline && (
+                            <span> • Deadline: {new Date(form.deadline).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 ml-4">
+                        <button
+                          className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200 transition-colors"
+                          onClick={() => editForm(form)}
+                        >
+                          Edit
+                        </button>
+                        {form.status === 'draft' && (
+                          <button
+                            className="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200 transition-colors"
+                            onClick={() => publishForm(form.id)}
+                          >
+                            Publish
+                          </button>
+                        )}
+                        <button
+                          className="px-3 py-1 bg-purple-100 text-purple-700 rounded text-sm hover:bg-purple-200 transition-colors"
+                          onClick={() => viewSubmissions(form.id)}
+                        >
+                          View Submissions
+                        </button>
+                        <button
+                          className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200 transition-colors"
+                          onClick={() => deleteForm(form.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Beneficiaries Table */}
         <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
           <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4">
@@ -669,34 +1019,19 @@ const ProgramDetails = () => {
                     setFormSuccess('');
                     setFormLoading(true);
                     try {
-                      // Ensure CSRF cookie is set
-                      await fetch('/sanctum/csrf-cookie', {
-                        credentials: 'include',
+                      const response = await axiosInstance.post('/beneficiaries', {
+                        name: form.name,
+                        beneficiary_type: form.beneficiaryType,
+                        assistance_type: form.assistanceType,
+                        status: form.status,
+                        amount: form.amount,
+                        contact_number: form.contactNumber,
+                        email: form.email,
+                        full_address: form.fullAddress,
+                        remarks: form.remarks,
+                        program_id: program.id,
                       });
 
-                      const res = await fetch('/api/beneficiaries', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify({
-                          name: form.name,
-                          beneficiary_type: form.beneficiaryType,
-                          assistance_type: form.assistanceType,
-                          status: form.status,
-                          amount: form.amount,
-                          contact_number: form.contactNumber,
-                          email: form.email,
-                          full_address: form.fullAddress,
-                          remarks: form.remarks,
-                          program_id: program.id,
-                        }),
-                      });
-
-                      const data = await res.json().catch(() => ({}));
-                      if (!res.ok) {
-                        setFormError(data?.message || 'Failed to add beneficiary.');
-                        return;
-                      }
                       setFormSuccess('Beneficiary added successfully!');
                       setShowModal(false);
                       setForm({
@@ -710,9 +1045,10 @@ const ProgramDetails = () => {
                         fullAddress: '',
                         remarks: '',
                       });
-                      fetchBeneficiaries(id).then(setBeneficiaries);
+                      const updatedBeneficiaries = await fetchBeneficiaries(id);
+                      setBeneficiaries(updatedBeneficiaries);
                     } catch (err) {
-                      setFormError('Failed to add beneficiary. ' + (err?.message || ''));
+                      setFormError('Failed to add beneficiary. ' + (err?.response?.data?.message || err?.message || ''));
                     } finally {
                       setFormLoading(false);
                     }
@@ -874,6 +1210,183 @@ const ProgramDetails = () => {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Announcement Modal */}
+        {showAnnouncementModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 rounded-t-2xl">
+                <h3 className="text-white font-semibold text-lg">
+                  {editingAnnouncement ? 'Edit Announcement' : 'Create Announcement'}
+                </h3>
+              </div>
+              <div className="p-6">
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.target);
+                  const data = {
+                    title: formData.get('title'),
+                    content: formData.get('content'),
+                    status: formData.get('status'),
+                    is_urgent: formData.get('is_urgent') === 'on',
+                    expires_at: formData.get('expires_at') || null,
+                    target_audience: formData.get('target_audience') ? formData.get('target_audience').split(',') : ['all']
+                  };
+                  
+                  if (editingAnnouncement) {
+                    updateAnnouncement(data);
+                  } else {
+                    createAnnouncement(data);
+                  }
+                }}>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Title</label>
+                      <input
+                        type="text"
+                        name="title"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm"
+                        required
+                        defaultValue={editingAnnouncement?.title || ''}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Content</label>
+                      <textarea
+                        name="content"
+                        rows="4"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm"
+                        required
+                        defaultValue={editingAnnouncement?.content || ''}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Status</label>
+                        <select
+                          name="status"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm"
+                          defaultValue={editingAnnouncement?.status || 'draft'}
+                        >
+                          <option value="draft">Draft</option>
+                          <option value="published">Published</option>
+                          <option value="archived">Archived</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Expires At</label>
+                        <input
+                          type="datetime-local"
+                          name="expires_at"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm"
+                          defaultValue={editingAnnouncement?.expires_at ? new Date(editingAnnouncement.expires_at).toISOString().slice(0, 16) : ''}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="is_urgent"
+                          className="mr-2"
+                          defaultChecked={editingAnnouncement?.is_urgent || false}
+                        />
+                        <span className="text-sm font-semibold text-gray-700">Mark as Urgent</span>
+                      </label>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Target Audience (comma-separated)</label>
+                      <input
+                        type="text"
+                        name="target_audience"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm"
+                        placeholder="all, specific_beneficiaries, pending_applicants"
+                        defaultValue={editingAnnouncement?.target_audience?.join(', ') || 'all'}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAnnouncementModal(false);
+                        setEditingAnnouncement(null);
+                      }}
+                      className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-all duration-300"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-medium transition-all duration-300"
+                    >
+                      {editingAnnouncement ? 'Update Announcement' : 'Create Announcement'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Form Builder Modal */}
+        {showFormBuilderModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4 rounded-t-2xl">
+                <h3 className="text-white font-semibold text-lg">
+                  {editingForm ? 'Edit Application Form' : 'Create Application Form'}
+                </h3>
+              </div>
+              <div className="p-6">
+                <FormBuilder
+                  form={editingForm}
+                  onSave={(formData) => {
+                    if (editingForm) {
+                      updateForm(formData);
+                    } else {
+                      createForm(formData);
+                    }
+                  }}
+                  onCancel={() => {
+                    setShowFormBuilderModal(false);
+                    setEditingForm(null);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Submissions Modal */}
+        {showSubmissionsModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4 rounded-t-2xl">
+                <h3 className="text-white font-semibold text-lg">Form Submissions</h3>
+              </div>
+              <div className="p-6">
+                <div className="text-center py-8 text-gray-400">
+                  Submissions viewer will be implemented here.
+                  <br />
+                  This will show all submitted applications with their data.
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSubmissionsModal(false);
+                      setSelectedFormSubmissions([]);
+                    }}
+                    className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-all duration-300"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>

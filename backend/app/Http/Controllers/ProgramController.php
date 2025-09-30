@@ -59,4 +59,18 @@ class ProgramController extends Controller
         Program::destroy($id);
         return response()->json(null, 204);
     }
+
+    public function getForResidents()
+    {
+        // Only return programs that are not in draft status
+        $programs = Program::where('status', '!=', 'draft')
+            ->where(function($query) {
+                $query->where('status', 'ongoing')
+                      ->orWhere('status', 'complete')
+                      ->orWhereNull('status'); // Include programs with no status set (legacy)
+            })
+            ->get();
+        
+        return response()->json($programs);
+    }
 }

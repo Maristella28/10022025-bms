@@ -60,8 +60,13 @@ const ProtectedRoute = ({ children }) => {
   const location = useLocation();
   const pathParts = location.pathname.split('/').filter(Boolean); // Remove empty strings
   const currentPath = pathParts[0]; // First part (role)
-  const modulePath = pathParts[1]; // Second part (module)
+  const modulePath = pathParts.slice(1).join('/'); // All parts after role (for nested paths)
   const fullPath = location.pathname; // Full path for special handling
+  
+  console.log('ProtectedRoute: Full path:', fullPath);
+  console.log('ProtectedRoute: Path parts:', pathParts);
+  console.log('ProtectedRoute: Current path (role):', currentPath);
+  console.log('ProtectedRoute: Module path:', modulePath);
   
   // Use the same profile completion check as Sidebares for consistency
   const [profileComplete, setProfileComplete] = useState(false);
@@ -184,6 +189,7 @@ const ProtectedRoute = ({ children }) => {
   // Check module permissions for non-dashboard paths
   if (modulePath && modulePath !== 'dashboard' && !routeConfig.unrestricted.includes(modulePath)) {
     console.log('Checking access for path:', modulePath);
+    console.log('Unrestricted paths:', routeConfig.unrestricted);
     
     // Handle resident routes differently
     if (user.role === 'residents' || user.role === 'resident') {
@@ -198,7 +204,25 @@ const ProtectedRoute = ({ children }) => {
       // Residents have access to all their routes by default
     } else {
       // For admin/staff, check in common routes with permissions
-      const moduleRoute = routeConfig.common.find(route => route.path === modulePath);
+      // First try exact match
+      let moduleRoute = routeConfig.common.find(route => route.path === modulePath);
+      
+      // If no exact match, try to match parameterized routes
+      if (!moduleRoute) {
+        console.log('No exact match found, trying parameterized routes...');
+        moduleRoute = routeConfig.common.find(route => {
+          if (route.path.includes(':')) {
+            // Convert route pattern to regex (e.g., "social-services/program/:id" -> "social-services/program/[^/]+")
+            const pattern = route.path.replace(/:[^/]+/g, '[^/]+');
+            const regex = new RegExp(`^${pattern}$`);
+            const matches = regex.test(modulePath);
+            console.log(`Checking route pattern "${route.path}" against "${modulePath}":`, matches);
+            return matches;
+          }
+          return false;
+        });
+      }
+      
       console.log('Found module route:', moduleRoute);
       
       if (moduleRoute) {
@@ -236,7 +260,8 @@ const ProtectedRoute = ({ children }) => {
       '/residents/dashboard',
       '/residents/profile', 
       '/user/profile',
-      '/residency-verification'
+      '/residency-verification',
+      '/residents/modules/Programs/ProgramAnnouncements'
     ];
     
     if (!allowedPathsForIncompleteProfile.includes(location.pathname)) {

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
+import EmailVerification from '../components/EmailVerification';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -16,30 +17,6 @@ export default function Login() {
   const [showVerification, setShowVerification] = useState(false);
   const [verificationUserId, setVerificationUserId] = useState(null);
   const [verificationEmail, setVerificationEmail] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [timer, setTimer] = useState(300); // 5 minutes (300 seconds)
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [resendStatus, setResendStatus] = useState('');
-
-  // Timer effect
-  useEffect(() => {
-    let interval = null;
-    if (isTimerRunning && timer > 0) {
-      interval = setInterval(() => {
-        setTimer((prev) => prev - 1);
-      }, 1000);
-    } else if (timer === 0) {
-      setIsTimerRunning(false);
-    }
-    return () => clearInterval(interval);
-  }, [isTimerRunning, timer]);
-
-  // Format timer
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   // Handle login submit
   const handleSubmit = async (e) => {
@@ -155,144 +132,52 @@ export default function Login() {
         setVerificationUserId(err.response.data.user_id);
         setVerificationEmail(email);
         setShowVerification(true);
-        setTimer(300);
-        setIsTimerRunning(true);
         setStatus('');
-        setResendStatus('');
         return;
       }
       setStatus(err?.response?.data?.message || 'Login failed. Please try again.');
     }
   };
 
-  // Handle resend code
-  const handleResendCode = async () => {
-    setResendStatus('Resending code...');
-    try {
-      const res = await fetch('/api/resend-verification-code', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          user_id: verificationUserId,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setResendStatus('Verification code resent! Check your email.');
-        setTimer(300);
-        setIsTimerRunning(true);
-        setVerificationCode('');
-      } else {
-        setResendStatus(data.message || 'Failed to resend code.');
-      }
-    } catch (error) {
-      setResendStatus('Network error. Try again.');
-    }
+  // Handle verification success
+  const handleVerificationSuccess = (data) => {
+    setStatus('Email verified! Logging you in...');
+    setIsSuccess(true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
   };
 
-  // Handle verification code submit
-  const handleVerifyCode = async (e) => {
-    e.preventDefault();
-    setResendStatus('Verifying code...');
-    try {
-      const res = await fetch('/api/verify-registration', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          user_id: verificationUserId,
-          verification_code: verificationCode,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        localStorage.setItem('authToken', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        setResendStatus('Email verified! Logging you in...');
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
-      } else {
-        if (data.code_expired) {
-          setResendStatus('Code expired. Please resend.');
-        } else {
-          setResendStatus(data.message || 'Verification failed.');
-        }
-      }
-    } catch (error) {
-      setResendStatus('Network error. Try again.');
-    }
+  // Handle verification resend
+  const handleVerificationResend = (data) => {
+    setStatus('Verification code resent! Check your email.');
+    setIsSuccess(true);
+  };
+
+  // Handle back to login
+  const handleBackToLogin = () => {
+    setShowVerification(false);
+    setVerificationUserId(null);
+    setVerificationEmail('');
+    setStatus('');
+    setIsSuccess(false);
   };
 
   // UI for verification
   if (showVerification) {
     return (
-      <div className="relative bg-gradient-to-br from-blue-100 via-white to-green-100 dark:from-gray-900 dark:to-gray-800 min-h-screen overflow-hidden">
-        <section className="flex items-center justify-center px-4 py-12 min-h-screen">
-          <div className="w-full max-w-md bg-white/60 dark:bg-gray-800/70 backdrop-blur-lg rounded-2xl shadow-xl p-8 space-y-6 ring-1 ring-gray-300 dark:ring-gray-600">
-            <div className="flex flex-col items-center space-y-3">
-              <img className="w-20 h-20 rounded-full shadow-lg" src="/assets/images/logo.jpg" alt="logo" />
-              <h1 className="text-3xl font-extrabold text-gray-800 dark:text-white text-center">Email Verification Required</h1>
-              <p className="text-base text-gray-600 dark:text-gray-300 text-center font-medium">
-                Enter the 3-digit code sent to <strong>{verificationEmail}</strong>
-              </p>
-            </div>
-            <div className="space-y-4">
-              <div className="text-center">
-                <div className={`text-lg font-bold ${timer <= 60 ? 'text-red-600' : 'text-blue-600'}`}>
-                  {formatTime(timer)}
-                </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {timer > 0 ? 'Time remaining (5 minutes)' : 'Code expired'}
-                </p>
-              </div>
-              <form onSubmit={handleVerifyCode} className="space-y-4">
-                <input
-                  type="text"
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
-                  maxLength={3}
-                  pattern="[0-9]{3}"
-                  required
-                  className="w-full px-4 py-3 text-center text-2xl font-bold tracking-widest rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="000"
-                  disabled={timer === 0}
-                />
-                <button
-                  type="submit"
-                  disabled={timer === 0}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-2.5 rounded-lg shadow-md transition duration-150 ease-in-out"
-                >
-                  Verify & Login
-                </button>
-              </form>
-              <div className="space-y-3">
-                <button
-                  onClick={handleResendCode}
-                  disabled={isTimerRunning}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-lg shadow-md transition duration-150 ease-in-out"
-                >
-                  {isTimerRunning ? `Resend available in ${formatTime(timer)}` : 'Click here to resend verification code'}
-                </button>
-                <button
-                  onClick={() => setShowVerification(false)}
-                  className="w-full bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2.5 rounded-lg shadow-md transition duration-150 ease-in-out"
-                >
-                  Back to Login
-                </button>
-              </div>
-              {resendStatus && (
-                <p className="text-sm text-center text-blue-600 dark:text-blue-400">{resendStatus}</p>
-              )}
-            </div>
-          </div>
-        </section>
-      </div>
+      <EmailVerification
+        email={verificationEmail}
+        userId={verificationUserId}
+        onVerify={handleVerificationSuccess}
+        onResend={handleVerificationResend}
+        onBack={handleBackToLogin}
+        title="Email Verification Required"
+        subtitle="Enter the 6-digit code sent to your email"
+        backButtonText="Back to Login"
+        verifyButtonText="Verify & Login"
+        resendButtonText="Resend Verification Code"
+      />
     );
   }
 

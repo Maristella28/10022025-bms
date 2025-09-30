@@ -102,7 +102,7 @@
             </div>
             
             <div class="message">
-                Thank you for registering with Barangay e-Governance! To complete your registration, please enter the verification code below in your registration form.
+                Thank you for registering with Barangay e-Governance! To complete your registration, please enter the 6-digit verification code below in your registration form.
             </div>
             
             <div class="verification-code">
@@ -110,7 +110,7 @@
             </div>
             
             <div class="message">
-                This verification code will expire in 1 minute. If you don't enter the code in time, you can request a new one.
+                This verification code will expire in 5 minutes. If you don't enter the code in time, you can request a new one.
             </div>
 
             <div class="warning">

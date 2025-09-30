@@ -9,6 +9,7 @@ import {
   ShieldCheckIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline';
+import EmailVerification from '../components/EmailVerification';
 
 export default function Register() {
   const [form, setForm] = useState({
@@ -28,41 +29,21 @@ export default function Register() {
     role: 'residents',
   });
 
-  const [verificationForm, setVerificationForm] = useState({
-    verificationCode: '',
-  });
-
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [showVerificationForm, setShowVerificationForm] = useState(false);
   const [registeredUserId, setRegisteredUserId] = useState(null);
   const [registeredEmail, setRegisteredEmail] = useState('');
-  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes (300 seconds) timer
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTermsAndConditions, setShowTermsAndConditions] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [nameValidationError, setNameValidationError] = useState('');
+  const [isValidatingName, setIsValidatingName] = useState(false);
+  const [emailValidationError, setEmailValidationError] = useState('');
+  const [isValidatingEmail, setIsValidatingEmail] = useState(false);
 
-  // Timer effect
-  useEffect(() => {
-    let interval = null;
-    if (isTimerRunning && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft((prevTime) => prevTime - 1);
-      }, 1000);
-    } else if (timeLeft === 0) {
-      setIsTimerRunning(false);
-    }
-    return () => clearInterval(interval);
-  }, [isTimerRunning, timeLeft]);
-
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   // Password validation function
   const validatePassword = (password) => {
@@ -82,27 +63,169 @@ export default function Register() {
     };
   };
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setForm((prevForm) => ({
-      ...prevForm,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
+  // Name uniqueness validation function
+  const validateNameUniqueness = async (firstName, lastName) => {
+    if (!firstName.trim() || !lastName.trim()) {
+      setNameValidationError('');
+      return true;
+    }
+
+    setIsValidatingName(true);
+    setNameValidationError('');
+
+    try {
+      const response = await fetch('http://localhost:8000/api/validate-name-uniqueness', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.is_unique) {
+        setNameValidationError('');
+        return true;
+      } else {
+        setNameValidationError(data.message || 'An account with this name already exists.');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error validating name uniqueness:', error);
+      setNameValidationError('Unable to validate name. Please try again.');
+      return false;
+    } finally {
+      setIsValidatingName(false);
+    }
   };
 
-  const handleVerificationChange = (e) => {
-    const { name, value } = e.target;
-    setVerificationForm((prevForm) => ({
-      ...prevForm,
-      [name]: value,
-    }));
+  // Email uniqueness validation function
+  const validateEmailUniqueness = async (email) => {
+    if (!email.trim()) {
+      setEmailValidationError('');
+      return true;
+    }
+
+    // Basic email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setEmailValidationError('');
+      return true; // Let the form's built-in email validation handle format errors
+    }
+
+    setIsValidatingEmail(true);
+    setEmailValidationError('');
+
+    try {
+      const response = await fetch('http://localhost:8000/api/validate-email-uniqueness', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: email.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.is_unique) {
+        setEmailValidationError('');
+        return true;
+      } else {
+        setEmailValidationError(data.message || 'An account with this email already exists.');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error validating email uniqueness:', error);
+      setEmailValidationError('Unable to validate email. Please try again.');
+      return false;
+    } finally {
+      setIsValidatingEmail(false);
+    }
   };
+
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm((prevForm) => {
+      const newForm = {
+        ...prevForm,
+        [name]: type === 'checkbox' ? checked : value,
+      };
+      
+      // Trigger name validation when first_name or last_name changes
+      if (name === 'first_name' || name === 'last_name') {
+        // Use setTimeout to ensure state is updated before validation
+        setTimeout(() => {
+          validateNameUniqueness(
+            name === 'first_name' ? value : newForm.first_name,
+            name === 'last_name' ? value : newForm.last_name
+          );
+        }, 100);
+      }
+      
+      // Trigger email validation when email changes
+      if (name === 'email') {
+        // Use setTimeout to ensure state is updated before validation
+        setTimeout(() => {
+          validateEmailUniqueness(value);
+        }, 100);
+      }
+      
+      return newForm;
+    });
+  };
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatus('Registering...');
     setError('');
     setIsSuccess(false);
+
+    // Check for name validation errors
+    if (nameValidationError) {
+      setError(nameValidationError);
+      setStatus('');
+      setIsSuccess(false);
+      return;
+    }
+
+    // Check for email validation errors
+    if (emailValidationError) {
+      setError(emailValidationError);
+      setStatus('');
+      setIsSuccess(false);
+      return;
+    }
+
+    // Validate name uniqueness before proceeding
+    const isNameValid = await validateNameUniqueness(form.first_name, form.last_name);
+    if (!isNameValid) {
+      setError(nameValidationError || 'An account with this name already exists.');
+      setStatus('');
+      setIsSuccess(false);
+      return;
+    }
+
+    // Validate email uniqueness before proceeding
+    const isEmailValid = await validateEmailUniqueness(form.email);
+    if (!isEmailValid) {
+      setError(emailValidationError || 'An account with this email already exists.');
+      setStatus('');
+      setIsSuccess(false);
+      return;
+    }
 
     if (form.password !== form.confirmPassword) {
       setError("Passwords do not match.");
@@ -150,7 +273,6 @@ export default function Register() {
       return;
     }
 
-    // Name duplicate check removed as it's not implemented yet
 
     try {
       const res = await fetch('http://localhost:8000/api/register', {
@@ -199,8 +321,6 @@ export default function Register() {
         setStatus('Registration initiated! Please check your email for the verification code.');
         setError('');
         setShowVerificationForm(true);
-        setTimeLeft(300);
-        setIsTimerRunning(true);
         setIsSuccess(true);
       } else {
         setStatus('Registration successful!');
@@ -216,100 +336,26 @@ export default function Register() {
     }
   };
 
-  const handleVerificationSubmit = async (e) => {
-    e.preventDefault();
-    setStatus('Verifying code...');
+  // Handle verification success
+  const handleVerificationSuccess = (data) => {
+    setStatus('Registration completed successfully!');
     setError('');
-    setIsSuccess(false);
-
-    try {
-      const res = await fetch('http://localhost:8000/api/verify-registration', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          user_id: registeredUserId,
-          verification_code: verificationForm.verificationCode,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        localStorage.setItem('authToken', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        setStatus('Registration completed successfully!');
-        setError('');
-        setIsSuccess(true);
-        window.location.href = '/login';
-      } else {
-        if (data.code_expired) {
-          setError('Verification code has expired. Please request a new one.');
-          setIsTimerRunning(false);
-        } else {
-          setError(data.message || 'Verification failed.');
-        }
-        setStatus('');
-        setIsSuccess(false);
-      }
-    } catch (error) {
-      console.error('Error:', error);
-      setError('Network or server error.');
-      setStatus('');
-    }
+    setIsSuccess(true);
+    window.location.href = '/login';
   };
 
-  const handleResendCode = async () => {
-    setStatus('Sending new verification code...');
+  // Handle verification resend
+  const handleVerificationResend = (data) => {
+    setStatus('New verification code sent successfully! Please check your inbox.');
     setError('');
-    setIsSuccess(false);
-
-    try {
-      const res = await fetch('http://localhost:8000/api/resend-verification-code', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          user_id: registeredUserId,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setStatus('New verification code sent successfully! Please check your inbox.');
-        setError('');
-        setTimeLeft(300);
-        setIsTimerRunning(true);
-        setVerificationForm({ verificationCode: '' });
-        setIsSuccess(true);
-      } else {
-        setError(data.message || 'Failed to resend verification code.');
-        setStatus('');
-        setIsSuccess(false);
-      }
-    } catch (error) {
-      console.error('Error:', error);
-      setError('Network or server error.');
-      setStatus('');
-    }
+    setIsSuccess(true);
   };
 
+  // Handle back to registration
   const handleBackToRegistration = () => {
     setShowVerificationForm(false);
     setRegisteredUserId(null);
     setRegisteredEmail('');
-    setTimeLeft(600);
-    setIsTimerRunning(false);
-    setVerificationForm({ verificationCode: '' });
     setStatus('');
     setError('');
     setIsSuccess(false);
@@ -317,119 +363,18 @@ export default function Register() {
 
   if (showVerificationForm) {
     return (
-      <div className="relative bg-gradient-to-br from-blue-100 via-white to-green-100 dark:from-gray-900 dark:to-gray-800 overflow-hidden">
-        <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
-          <svg className="w-full h-full opacity-25" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style={{ stopColor: '#60A5FA', stopOpacity: 1 }} />
-                <stop offset="100%" style={{ stopColor: '#34D399', stopOpacity: 1 }} />
-              </linearGradient>
-              <filter id="blur">
-                <feGaussianBlur stdDeviation="50" />
-              </filter>
-            </defs>
-            <circle cx="200" cy="150" r="100" fill="url(#grad1)" filter="url(#blur)">
-              <animate attributeName="cy" values="150;450;150" dur="20s" repeatCount="indefinite" />
-            </circle>
-            <circle cx="600" cy="300" r="120" fill="url(#grad1)" filter="url(#blur)">
-              <animate attributeName="cy" values="300;100;300" dur="25s" repeatCount="indefinite" />
-            </circle>
-            <circle cx="400" cy="500" r="80" fill="url(#grad1)" filter="url(#blur)">
-              <animate attributeName="cy" values="500;200;500" dur="18s" repeatCount="indefinite" />
-            </circle>
-          </svg>
-        </div>
-
-        <section className="min-h-screen flex items-center justify-center px-4 py-12">
-          <div className="w-full max-w-md bg-white/60 dark:bg-gray-800/70 backdrop-blur-lg rounded-2xl shadow-xl p-8 space-y-6 ring-1 ring-gray-300 dark:ring-gray-600">
-            <div className="flex flex-col items-center space-y-3">
-              <img className="w-20 h-20 rounded-full shadow-lg" src="/assets/images/logo.jpg" alt="logo" />
-              <h1 className="text-3xl font-extrabold text-gray-800 dark:text-white text-center leading-tight tracking-wide">
-                Verify Your Email
-              </h1>
-              <p className="text-base text-gray-600 dark:text-gray-300 text-center font-medium">
-                Enter Verification Code
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="text-center">
-                <p className="text-gray-700 dark:text-gray-300">
-                  We've sent a 3-digit verification code to <strong>{registeredEmail}</strong>
-                </p>
-              </div>
-
-              {/* Timer Display */}
-              <div className="text-center">
-                <div className={`text-lg font-bold ${timeLeft <= 60 ? 'text-red-600' : 'text-blue-600'}`}>
-                  {formatTime(timeLeft)}
-                </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {timeLeft > 0 ? 'Time remaining (5 minutes)' : 'Code expired'}
-                </p>
-              </div>
-
-              <form onSubmit={handleVerificationSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Verification Code
-                  </label>
-                  <input
-                    type="text"
-                    name="verificationCode"
-                    value={verificationForm.verificationCode}
-                    onChange={handleVerificationChange}
-                    maxLength="3"
-                    pattern="[0-9]{3}"
-                    required
-                    className="w-full px-4 py-3 text-center text-2xl font-bold tracking-widest rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="000"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Enter the 3-digit code from your email</p>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={timeLeft === 0}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-2.5 rounded-lg shadow-md transition duration-150 ease-in-out"
-                >
-                  Verify & Complete Registration
-                </button>
-              </form>
-
-              <div className="space-y-3">
-                {timeLeft === 0 && (
-                  <button
-                    onClick={handleResendCode}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-lg shadow-md transition duration-150 ease-in-out"
-                  >
-                    Resend Verification Code
-                  </button>
-                )}
-
-                <button
-                  onClick={handleBackToRegistration}
-                  className="w-full bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2.5 rounded-lg shadow-md transition duration-150 ease-in-out"
-                >
-                  Back to Registration
-                </button>
-              </div>
-
-              {status && <p className={`text-sm text-center ${isSuccess ? 'text-green-600' : 'text-red-600'}`}>{status}</p>}
-              {error && <p className="text-red-600 text-sm text-center">{error}</p>}
-            </div>
-
-            <div className="text-center pt-2">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Already have an account?
-                <a href="/login" className="font-semibold text-blue-600 hover:underline dark:text-blue-400"> Login here</a>
-              </p>
-            </div>
-          </div>
-        </section>
-  
-      </div>
+      <EmailVerification
+        email={registeredEmail}
+        userId={registeredUserId}
+        onVerify={handleVerificationSuccess}
+        onResend={handleVerificationResend}
+        onBack={handleBackToRegistration}
+        title="Verify Your Email"
+        subtitle="Enter Verification Code"
+        backButtonText="Back to Registration"
+        verifyButtonText="Verify & Complete Registration"
+        resendButtonText="Resend Verification Code"
+      />
     );
   }
 
@@ -472,64 +417,97 @@ export default function Register() {
 
 
           <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-xs text-blue-700 font-medium">
-                  💡 Don't worry if you make a typo! You can correct any misspelled names later in your profile.
-                </p>
+              <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-blue-700 font-medium">
+                    💡 Don't worry if you make a typo! You can correct any misspelled names later in your profile.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">First Name</label>
+                    <input
+                      type="text"
+                      name="first_name"
+                      value={form.first_name}
+                      onChange={handleChange}
+                      required
+                      className={`w-full px-4 py-2 rounded-lg border ${
+                        nameValidationError ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                      } bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 ${
+                        nameValidationError ? 'focus:ring-red-500' : 'focus:ring-blue-500'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Last Name</label>
+                    <input
+                      type="text"
+                      name="last_name"
+                      value={form.last_name}
+                      onChange={handleChange}
+                      required
+                      className={`w-full px-4 py-2 rounded-lg border ${
+                        nameValidationError ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                      } bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 ${
+                        nameValidationError ? 'focus:ring-red-500' : 'focus:ring-blue-500'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Middle Name</label>
+                    <input
+                      type="text"
+                      name="middle_name"
+                      value={form.middle_name}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="(Optional)"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Suffix</label>
+                    <select
+                      name="name_suffix"
+                      value={form.name_suffix}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="none">None</option>
+                      <option value="Jr.">Jr.</option>
+                      <option value="Sr.">Sr.</option>
+                      <option value="II">II</option>
+                      <option value="III">III</option>
+                      <option value="IV">IV</option>
+                    </select>
+                  </div>
+                </div>
+                
+                {/* Name validation error display */}
+                {nameValidationError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-700 font-medium flex items-center gap-2">
+                      <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                      {nameValidationError}
+                    </p>
+                  </div>
+                )}
+                
+                {/* Name validation loading indicator */}
+                {isValidatingName && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-sm text-blue-700 font-medium flex items-center gap-2">
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Checking name availability...
+                    </p>
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">First Name</label>
-                  <input
-                    type="text"
-                    name="first_name"
-                    value={form.first_name}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Last Name</label>
-                  <input
-                    type="text"
-                    name="last_name"
-                    value={form.last_name}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Middle Name</label>
-                  <input
-                    type="text"
-                    name="middle_name"
-                    value={form.middle_name}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="(Optional)"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Suffix</label>
-                  <select
-                    name="name_suffix"
-                    value={form.name_suffix}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="none">None</option>
-                    <option value="Jr.">Jr.</option>
-                    <option value="Sr.">Sr.</option>
-                    <option value="II">II</option>
-                    <option value="III">III</option>
-                    <option value="IV">IV</option>
-                  </select>
-                </div>
-              </div>
-            </div>
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Email Address</label>
@@ -539,8 +517,37 @@ export default function Register() {
                 value={form.email}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 rounded-lg border ${
+                  emailValidationError ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                } bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 ${
+                  emailValidationError ? 'focus:ring-red-500' : 'focus:ring-blue-500'
+                }`}
               />
+              
+              {/* Email validation error display */}
+              {emailValidationError && (
+                <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-700 font-medium flex items-center gap-2">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                    {emailValidationError}
+                  </p>
+                </div>
+              )}
+              
+              {/* Email validation loading indicator */}
+              {isValidatingEmail && (
+                <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-700 font-medium flex items-center gap-2">
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Checking email availability...
+                  </p>
+                </div>
+              )}
             </div>
 
             <div>
