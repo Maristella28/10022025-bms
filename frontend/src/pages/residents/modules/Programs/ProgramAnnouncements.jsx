@@ -99,24 +99,29 @@ const ProgramAnnouncements = () => {
         }
       });
 
-      const response = await fetch(`/api/program-application-forms/${selectedForm.id}/submit`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formDataToSend,
-      });
+      console.log('ProgramAnnouncements: Submitting form data for form ID:', selectedForm.id);
+      console.log('ProgramAnnouncements: Form data entries:', Array.from(formDataToSend.entries()));
 
-      if (response.ok) {
+      const response = await axios.post(`/program-application-forms/${selectedForm.id}/submit`, formDataToSend);
+
+      console.log('ProgramAnnouncements: Submission response:', response.data);
+      
+      if (response.data.success) {
         alert('Application submitted successfully!');
         setShowApplicationModal(false);
         setSelectedForm(null);
         setFormData({});
       } else {
-        const error = await response.json();
-        alert(error.message || 'Failed to submit application');
+        alert(response.data.message || 'Failed to submit application');
       }
     } catch (error) {
-      console.error('Error submitting application:', error);
-      alert('Failed to submit application');
+      console.error('ProgramAnnouncements: Error submitting application:', error);
+      console.error('ProgramAnnouncements: Error response:', error.response);
+      console.error('ProgramAnnouncements: Error status:', error.response?.status);
+      console.error('ProgramAnnouncements: Error data:', error.response?.data);
+      
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to submit application';
+      alert(errorMessage);
     } finally {
       setSubmitting(false);
     }

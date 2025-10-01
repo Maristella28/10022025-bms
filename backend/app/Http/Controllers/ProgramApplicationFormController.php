@@ -11,6 +11,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\ApplicationStatusNotificationMail;
+use App\Notifications\ApplicationStatusUpdated;
 
 class ProgramApplicationFormController extends Controller
 {
@@ -133,6 +136,134 @@ class ProgramApplicationFormController extends Controller
             'success' => true,
             'data' => $form
         ]);
+    }
+
+    /**
+     * Get residents who have approved submissions for all published forms of a program
+     */
+    public function getQualifiedResidents(Request $request, string $programId): JsonResponse
+    {
+        try {
+            // Get all published forms for this program
+            $publishedForms = ProgramApplicationForms::where('program_id', $programId)
+                ->where('status', 'published')
+                ->get();
+
+            \Log::info('Qualified Residents Debug', [
+                'program_id' => $programId,
+                'published_forms_count' => $publishedForms->count(),
+                'published_forms' => $publishedForms->map(function($form) {
+                    return [
+                        'id' => $form->id,
+                        'title' => $form->title,
+                        'status' => $form->status,
+                        'published_at' => $form->published_at
+                    ];
+                })
+            ]);
+
+            if ($publishedForms->isEmpty()) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'message' => 'No published forms found for this program'
+                ]);
+            }
+
+            $formIds = $publishedForms->pluck('id');
+
+            // Get all residents who have any approved submissions for this program's forms
+            $residentsWithApprovals = \App\Models\Resident::whereHas('applicationSubmissions', function ($query) use ($formIds) {
+                $query->whereIn('form_id', $formIds)
+                      ->where('status', 'approved');
+            })
+            ->with(['user', 'profile', 'applicationSubmissions' => function($query) use ($formIds) {
+                $query->whereIn('form_id', $formIds);
+            }])
+            ->get();
+
+            \Log::info('Residents with approvals debug', [
+                'residents_count' => $residentsWithApprovals->count(),
+                'residents' => $residentsWithApprovals->map(function($resident) use ($formIds) {
+                    $submissions = $resident->applicationSubmissions->whereIn('form_id', $formIds);
+                    return [
+                        'resident_id' => $resident->id,
+                        'name' => $resident->first_name . ' ' . $resident->last_name,
+                        'submissions_count' => $submissions->count(),
+                        'approved_count' => $submissions->where('status', 'approved')->count(),
+                        'submissions' => $submissions->map(function($sub) {
+                            return [
+                                'form_id' => $sub->form_id,
+                                'status' => $sub->status
+                            ];
+                        })
+                    ];
+                })
+            ]);
+
+            // Filter residents who have approved submissions for ALL published forms
+            $qualifiedResidents = $residentsWithApprovals->filter(function ($resident) use ($formIds) {
+                // Check if resident has approved submissions for ALL forms
+                $approvedFormIds = $resident->applicationSubmissions()
+                    ->whereIn('form_id', $formIds)
+                    ->where('status', 'approved')
+                    ->pluck('form_id')
+                    ->unique();
+                
+                $hasAllApprovals = $approvedFormIds->count() === $formIds->count();
+                
+                \Log::info('Resident qualification check', [
+                    'resident_id' => $resident->id,
+                    'resident_name' => $resident->first_name . ' ' . $resident->last_name,
+                    'required_forms' => $formIds->toArray(),
+                    'approved_forms' => $approvedFormIds->toArray(),
+                    'has_all_approvals' => $hasAllApprovals
+                ]);
+                
+                return $hasAllApprovals;
+            })
+            ->map(function ($resident) {
+                return [
+                    'id' => $resident->id,
+                    'first_name' => $resident->first_name,
+                    'last_name' => $resident->last_name,
+                    'email' => $resident->user->email ?? $resident->email,
+                    'mobile_number' => $resident->mobile_number,
+                    'current_address' => $resident->current_address,
+                    'resident_id' => $resident->resident_id,
+                    'user_id' => $resident->user_id
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $qualifiedResidents->values(),
+                'message' => 'Qualified residents loaded successfully',
+                'meta' => [
+                    'total_forms' => $formIds->count(),
+                    'qualified_residents' => $qualifiedResidents->count(),
+                    'debug_info' => [
+                        'published_forms' => $publishedForms->map(function($form) {
+                            return ['id' => $form->id, 'title' => $form->title];
+                        }),
+                        'form_ids' => $formIds->toArray()
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error fetching qualified residents', [
+                'program_id' => $programId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch qualified residents',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -300,6 +431,179 @@ class ProgramApplicationFormController extends Controller
     }
 
     /**
+     * Get form submissions for admin review
+     */
+    public function getFormSubmissions(Request $request, string $id): JsonResponse
+    {
+        $form = ProgramApplicationForms::with(['fields', 'submissions.resident', 'submissions.submissionData.field'])
+            ->find($id);
+
+        if (!$form) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Application form not found'
+            ], 404);
+        }
+
+        // Get submissions with resident and submission data
+        $submissions = ApplicationSubmission::with([
+            'resident',
+            'submissionData.field',
+            'reviewer'
+        ])
+        ->where('form_id', $id)
+        ->orderBy('submitted_at', 'desc')
+        ->get();
+
+        // Format submissions data for frontend
+        $formattedSubmissions = $submissions->map(function ($submission) use ($form) {
+            $submissionData = [];
+            
+            // Group submission data by field
+            foreach ($submission->submissionData as $data) {
+                $field = $data->field;
+                if ($field) {
+                    $submissionData[$field->field_name] = [
+                        'label' => $field->field_label,
+                        'type' => $field->field_type,
+                        'value' => $data->field_value,
+                        'file_path' => $data->file_path,
+                        'file_original_name' => $data->file_original_name,
+                        'file_mime_type' => $data->file_mime_type,
+                        'file_size' => $data->file_size,
+                        'is_file' => $data->isFile(),
+                        'file_url' => $data->getFileUrl()
+                    ];
+                }
+            }
+
+            return [
+                'id' => $submission->id,
+                'resident' => [
+                    'id' => $submission->resident->id,
+                    'name' => trim(($submission->resident->first_name ?? '') . ' ' . 
+                                 ($submission->resident->middle_name ?? '') . ' ' . 
+                                 ($submission->resident->last_name ?? '')),
+                    'email' => $submission->resident->email,
+                    'contact_number' => $submission->resident->contact_number,
+                    'resident_id' => $submission->resident->resident_id
+                ],
+                'status' => $submission->status,
+                'admin_notes' => $submission->admin_notes,
+                'submitted_at' => $submission->submitted_at,
+                'reviewed_at' => $submission->reviewed_at,
+                'reviewer' => $submission->reviewer ? [
+                    'id' => $submission->reviewer->id,
+                    'name' => $submission->reviewer->name,
+                    'email' => $submission->reviewer->email
+                ] : null,
+                'submission_data' => $submissionData
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'form' => [
+                    'id' => $form->id,
+                    'title' => $form->title,
+                    'description' => $form->description,
+                    'fields' => $form->fields->map(function ($field) {
+                        return [
+                            'id' => $field->id,
+                            'field_name' => $field->field_name,
+                            'field_label' => $field->field_label,
+                            'field_type' => $field->field_type,
+                            'is_required' => $field->is_required,
+                            'field_options' => $field->field_options
+                        ];
+                    })
+                ],
+                'submissions' => $formattedSubmissions,
+                'total_submissions' => $submissions->count(),
+                'status_counts' => [
+                    'pending' => $submissions->where('status', 'pending')->count(),
+                    'under_review' => $submissions->where('status', 'under_review')->count(),
+                    'approved' => $submissions->where('status', 'approved')->count(),
+                    'rejected' => $submissions->where('status', 'rejected')->count()
+                ]
+            ]
+        ]);
+    }
+
+    /**
+     * Get user's form submissions
+     */
+    public function getMySubmissions(Request $request): JsonResponse
+    {
+        // Get resident ID from authenticated user
+        $user = auth()->user();
+        $resident = \App\Models\Resident::where('user_id', $user->id)->first();
+        
+        if (!$resident) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resident profile not found. Please complete your profile first.'
+            ], 400);
+        }
+
+        // Get submissions for this resident
+        $submissions = ApplicationSubmission::with([
+            'form.program',
+            'submissionData.field'
+        ])
+        ->where('resident_id', $resident->id)
+        ->orderBy('submitted_at', 'desc')
+        ->get();
+
+        // Format submissions data for frontend
+        $formattedSubmissions = $submissions->map(function ($submission) {
+            $submissionData = [];
+            
+            foreach ($submission->submissionData as $data) {
+                $field = $data->field;
+                if ($field) {
+                    $submissionData[$field->field_name] = [
+                        'label' => $field->field_label,
+                        'value' => $data->field_value,
+                        'type' => $field->field_type,
+                        'is_file' => $field->field_type === 'file',
+                        'file_url' => $data->file_url,
+                        'file_original_name' => $data->file_original_name,
+                        'file_size' => $data->file_size
+                    ];
+                }
+            }
+
+            return [
+                'id' => $submission->id,
+                'form' => [
+                    'id' => $submission->form->id,
+                    'title' => $submission->form->title,
+                    'description' => $submission->form->description,
+                    'program' => $submission->form->program ? [
+                        'id' => $submission->form->program->id,
+                        'name' => $submission->form->program->name
+                    ] : null
+                ],
+                'status' => $submission->status,
+                'submitted_at' => $submission->submitted_at,
+                'reviewed_at' => $submission->reviewed_at,
+                'admin_notes' => $submission->admin_notes,
+                'submission_data' => $submissionData
+            ];
+        });
+
+        return response()->json([
+            'submissions' => $formattedSubmissions,
+            'total' => $submissions->count(),
+            'message' => $submissions->count() > 0 
+                ? 'Submissions loaded successfully' 
+                : 'No applications submitted yet. Apply for programs to see them here.'
+        ]);
+    }
+
+    /**
      * Submit application form
      */
     public function submitApplication(Request $request, string $id): JsonResponse
@@ -329,14 +633,17 @@ class ProgramApplicationFormController extends Controller
         }
 
         // Get resident ID from authenticated user
-        $residentId = auth()->user()->resident_id ?? auth()->user()->id;
-
-        if (!$residentId) {
+        $user = auth()->user();
+        $resident = \App\Models\Resident::where('user_id', $user->id)->first();
+        
+        if (!$resident) {
             return response()->json([
                 'success' => false,
-                'message' => 'Resident not found'
+                'message' => 'Resident profile not found. Please complete your profile first.'
             ], 400);
         }
+        
+        $residentId = $resident->id;
 
         // Check if multiple submissions are allowed
         if (!$form->allow_multiple_submissions) {
@@ -416,6 +723,89 @@ class ProgramApplicationFormController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to submit application',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update submission status
+     */
+    public function updateSubmissionStatus(Request $request, string $submissionId): JsonResponse
+    {
+        $request->validate([
+            'status' => 'required|in:pending,under_review,approved,rejected',
+            'admin_notes' => 'nullable|string|max:1000'
+        ]);
+
+        $submission = ApplicationSubmission::find($submissionId);
+        
+        if (!$submission) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Submission not found'
+            ], 404);
+        }
+
+        try {
+            $submission->update([
+                'status' => $request->status,
+                'admin_notes' => $request->admin_notes,
+                'reviewed_at' => now(),
+                'reviewed_by' => auth()->id()
+            ]);
+
+            // Send email notification to resident
+            try {
+                $resident = $submission->resident;
+                $user = $resident->user;
+                
+                if ($user && $user->email) {
+                    // Load the form and program relationships for the email
+                    $submission->load(['form.program', 'resident.user']);
+                    
+                    Mail::to($user->email)->send(new ApplicationStatusNotificationMail(
+                        $user,
+                        $submission,
+                        $request->status,
+                        $request->admin_notes
+                    ));
+                    
+                    // Send in-app notification
+                    $user->notify(new ApplicationStatusUpdated($submission, $request->status, $request->admin_notes));
+                    
+                    \Log::info('Application status notification email sent', [
+                        'submission_id' => $submission->id,
+                        'resident_id' => $resident->id,
+                        'user_email' => $user->email,
+                        'status' => $request->status
+                    ]);
+                } else {
+                    \Log::warning('Cannot send email notification - user email not found', [
+                        'submission_id' => $submission->id,
+                        'resident_id' => $resident->id,
+                        'user_id' => $user ? $user->id : 'N/A'
+                    ]);
+                }
+            } catch (\Exception $mailError) {
+                \Log::error('Failed to send application status notification email', [
+                    'submission_id' => $submission->id,
+                    'error' => $mailError->getMessage(),
+                    'trace' => $mailError->getTraceAsString()
+                ]);
+                // Don't fail the status update if email fails
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Submission status updated successfully',
+                'data' => $submission->fresh(['resident', 'reviewer'])
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update submission status',
                 'error' => $e->getMessage()
             ], 500);
         }

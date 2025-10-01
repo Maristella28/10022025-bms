@@ -127,31 +127,11 @@ const Sidebares = memo(() => {
 
   // Removed complex permissions normalization - using simple benefits check now
 
-  // If the profile has a permission flag set by admin, show My Benefits
+  // My Benefits should always be visible to residents
   const canSeeMyBenefits = useMemo(() => {
-    const profile = user?.profile;
-    if (!profile) return false;
-    
-    // Simple check for benefits enabled
-    const isEnabled = !!(
-      profile.my_benefits_enabled === true ||
-      profile.my_benefits_enabled === 'true' ||
-      profile.my_benefits_enabled === 1 ||
-      profile.my_benefits_enabled === '1' ||
-      profile.my_benefits === true ||
-      profile.my_benefits === 'true' ||
-      profile.my_benefits === 1 ||
-      profile.my_benefits === '1'
-    );
-
-    console.log("Sidebares: Benefits detection:", {
-      my_benefits_enabled: profile.my_benefits_enabled,
-      my_benefits: profile.my_benefits,
-      final_result: isEnabled
-    });
-    
-    return isEnabled;
-  }, [user?.profile]);
+    // Always show My Benefits to residents (not admins)
+    return user?.role !== 'admin';
+  }, [user?.role]);
 
   // Memoize final menu items including conditional My Benefits
   const menuItems = useMemo(() => {

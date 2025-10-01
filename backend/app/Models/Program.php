@@ -21,11 +21,13 @@ class Program extends Model
         'amount',
         'status',
         'max_beneficiaries',
+        'payout_date',
     ];
 
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'payout_date' => 'datetime',
         'max_beneficiaries' => 'integer',
     ];
 

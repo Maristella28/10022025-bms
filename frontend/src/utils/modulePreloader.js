@@ -37,7 +37,7 @@ class ModulePreloader {
     const modules = [
       { name: 'RequestDocuments', import: () => import('../pages/residents/RequestDocuments') },
       { name: 'Projects', import: () => import('../pages/residents/Projects') },
-      { name: 'MyBenefits', import: () => import('../pages/residents/MyBenefits') },
+      { name: 'MyBenefits', import: () => import('../pages/residents/modules/Programs/MyBenefits') },
       { name: 'BlotterAppointment', import: () => import('../pages/residents/BlotterAppointment') },
       { name: 'OrganizationalChart', import: () => import('../pages/residents/OrganizationalChart') }
     ];

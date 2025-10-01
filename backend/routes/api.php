@@ -277,6 +277,9 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
         // Program Application Forms (Admin only)
         Route::apiResource('program-application-forms', App\Http\Controllers\ProgramApplicationFormController::class);
         Route::post('/program-application-forms/{id}/publish', [App\Http\Controllers\ProgramApplicationFormController::class, 'publish']);
+        Route::get('/program-application-forms/{id}/submissions', [App\Http\Controllers\ProgramApplicationFormController::class, 'getFormSubmissions']);
+        Route::put('/program-application-forms/submissions/{submissionId}/status', [App\Http\Controllers\ProgramApplicationFormController::class, 'updateSubmissionStatus']);
+        Route::get('/programs/{programId}/qualified-residents', [App\Http\Controllers\ProgramApplicationFormController::class, 'getQualifiedResidents']);
         
         // Program Announcements (Admin only)
         Route::apiResource('program-announcements', App\Http\Controllers\ProgramAnnouncementController::class);
@@ -288,6 +291,12 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
         Route::get('/households/{id}', [\App\Http\Controllers\HouseholdController::class, 'show']);
         Route::put('/households/{id}', [\App\Http\Controllers\HouseholdController::class, 'update']);
         Route::delete('/households/{id}', [\App\Http\Controllers\HouseholdController::class, 'destroy']);
+        
+        // 👥 Beneficiaries Management (Admin only)
+        Route::apiResource('beneficiaries', App\Http\Controllers\BeneficiaryController::class);
+        Route::post('/beneficiaries/{id}/toggle-visibility', [App\Http\Controllers\BeneficiaryController::class, 'toggleVisibility']);
+        Route::post('/beneficiaries/{id}/mark-paid', [App\Http\Controllers\BeneficiaryController::class, 'markPaid']);
+        Route::get('/beneficiaries/{id}/download-receipt', [App\Http\Controllers\BeneficiaryController::class, 'downloadReceipt']);
     });
     /*
     |--------------------------------------------------------------------------
@@ -336,6 +345,8 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
         
         // My Benefits API - access controlled by mybenefits.allowed
         Route::middleware('mybenefits.allowed')->get('/my-benefits', [BeneficiaryController::class, 'getMyBenefits']);
+        Route::middleware('mybenefits.allowed')->get('/my-benefits/{id}/track', [BeneficiaryController::class, 'getProgramTracking']);
+        Route::middleware('mybenefits.allowed')->post('/my-benefits/{id}/upload-proof', [BeneficiaryController::class, 'uploadProofOfPayout']);
     });
 
     // 🔔 Notifications
@@ -472,10 +483,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/program-application-forms', [App\Http\Controllers\ProgramApplicationFormController::class, 'index']);
     Route::get('/program-application-forms/published', [App\Http\Controllers\ProgramApplicationFormController::class, 'getPublishedForms']);
     Route::post('/program-application-forms/{id}/submit', [App\Http\Controllers\ProgramApplicationFormController::class, 'submitApplication']);
+    Route::get('/program-application-forms/{id}/submissions', [App\Http\Controllers\ProgramApplicationFormController::class, 'getFormSubmissions']);
+    Route::get('/my-submissions', [App\Http\Controllers\ProgramApplicationFormController::class, 'getMySubmissions']);
     
     // Programs (for residents - only non-draft programs)
     Route::get('/programs/residents', [App\Http\Controllers\ProgramController::class, 'getForResidents']);
     Route::get('/programs/{id}', [App\Http\Controllers\ProgramController::class, 'show']);
+    
+    // Beneficiaries (for residents)
+    Route::get('/my-benefits', [App\Http\Controllers\BeneficiaryController::class, 'getMyBenefits']);
+    Route::get('/my-benefits/{id}/track', [App\Http\Controllers\BeneficiaryController::class, 'getProgramTracking']);
+    Route::post('/my-benefits/{id}/upload-proof', [App\Http\Controllers\BeneficiaryController::class, 'uploadProofOfPayout']);
 });
 
 // ✅ **New Backend Structure for Disaster/Emergency Records**
@@ -530,8 +548,6 @@ Route::middleware('auth:sanctum')->group(function () {
 //    - Let me know if you want to customize the fields further!
 
 
-Route::apiResource('beneficiaries', App\Http\Controllers\BeneficiaryController::class);
-Route::post('/beneficiaries/{id}/toggle-benefits', [App\Http\Controllers\BeneficiaryController::class, 'toggleMyBenefits']);
 Route::apiResource('disaster-emergencies', DisasterEmergencyRecordController::class);
 Route::apiResource('financial-records', FinancialRecordController::class);
 

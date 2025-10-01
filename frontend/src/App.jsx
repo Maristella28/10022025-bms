@@ -45,7 +45,8 @@ const OrganizationalChart = lazy(() => import('./pages/residents/OrganizationalC
 const Officials = lazy(() => import('./pages/residents/modules/OrganizationalChart/Officials'));
 const Staff = lazy(() => import('./pages/residents/modules/OrganizationalChart/Staff'));
 const CharterList = lazy(() => import('./pages/residents/CharterList'));
-const MyBenefits = lazy(() => import('./pages/residents/MyBenefits'));
+const MyBenefits = lazy(() => import('./pages/residents/modules/Programs/MyBenefits'));
+const EnrolledPrograms = lazy(() => import('./pages/residents/modules/Programs/EnrolledPrograms'));
 const AddFeedback = lazy(() => import('./pages/residents/AddFeedback'));
 const ProgramAnnouncements = lazy(() => import('./pages/residents/modules/Programs/ProgramAnnouncements'));
 
@@ -102,6 +103,7 @@ const residentRoutesWithComponents = routeConfig.residents.map(route => ({
     "staff": withSuspense(<Staff />),
     "charterList": withSuspense(<CharterList />),
     "myBenefits": withSuspense(<MyBenefits />),
+    "enrolledPrograms": withSuspense(<EnrolledPrograms />),
     "addFeedback": withSuspense(<AddFeedback />),
     "modules/Programs/ProgramAnnouncements": withSuspense(<ProgramAnnouncements />)
   }[route.path] || withSuspense(<div>Page under construction</div>) // Fallback for missing components

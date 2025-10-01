@@ -25,9 +25,9 @@ class BeneficiaryController extends Controller
             ]);
         }
 
-        // Get benefits for this resident that are enabled and approved
+        // Get benefits for this resident that are visible and approved
         $benefits = Beneficiary::with(['program'])
-            ->where('my_benefits_enabled', true)
+            ->where('visible_to_resident', true)
             ->where('status', 'Approved')
             ->where(function($query) use ($resident) {
                 // More flexible name matching
@@ -43,7 +43,13 @@ class BeneficiaryController extends Controller
             ->orderByDesc('id')
             ->get();
 
-        return response()->json($benefits);
+        return response()->json([
+            'beneficiaries' => $benefits,
+            'total' => $benefits->count(),
+            'message' => $benefits->count() > 0 
+                ? 'Benefits loaded successfully' 
+                : 'No benefits available yet. Apply for programs to see them here.'
+        ]);
     }
 
     /**
@@ -179,11 +185,11 @@ class BeneficiaryController extends Controller
      * Remove the specified resource from storage.
      */
     /**
-     * Toggle My Benefits status for a beneficiary
+     * Toggle visibility to resident for a beneficiary
      */
-    public function toggleMyBenefits(Request $request, $id)
+    public function toggleVisibility(Request $request, $id)
     {
-        \Log::info('toggleMyBenefits called', [
+        \Log::info('toggleVisibility called', [
             'beneficiary_id' => $id,
             'request_data' => $request->all(),
             'user_id' => $request->user()->id ?? 'none'
@@ -194,120 +200,33 @@ class BeneficiaryController extends Controller
         \Log::info('Found beneficiary', [
             'beneficiary_id' => $beneficiary->id,
             'beneficiary_name' => $beneficiary->name,
-            'current_my_benefits_enabled' => $beneficiary->my_benefits_enabled,
+            'current_visible_to_resident' => $beneficiary->visible_to_resident,
             'status' => $beneficiary->status
         ]);
         
         // Validate the request
         $data = $request->validate([
-            'enabled' => 'required|boolean',
+            'visible' => 'required|boolean',
         ]);
 
-        \Log::info('Request validated', ['enabled' => $data['enabled']]);
-
-        // Only allow enabling if the beneficiary is approved
-        if ($data['enabled'] && $beneficiary->status !== 'Approved') {
-            \Log::warning('Cannot enable benefits - beneficiary not approved', [
-                'beneficiary_id' => $beneficiary->id,
-                'status' => $beneficiary->status
-            ]);
-            return response()->json([
-                'message' => 'Only approved beneficiaries can be enabled for My Benefits',
-                'enabled' => false
-            ], 422);
-        }
+        \Log::info('Request validated', ['visible' => $data['visible']]);
 
         // Update the beneficiary
-        $beneficiary->my_benefits_enabled = $data['enabled'];
+        $beneficiary->visible_to_resident = $data['visible'];
         $beneficiary->save();
 
-        \Log::info('Beneficiary updated', [
+        \Log::info('Beneficiary visibility updated', [
             'beneficiary_id' => $beneficiary->id,
-            'new_my_benefits_enabled' => $beneficiary->my_benefits_enabled
+            'new_visible_to_resident' => $beneficiary->visible_to_resident
         ]);
-
-        // Find the resident by matching the beneficiary name with resident name
-        \Log::info('Searching for resident by beneficiary name', [
-            'beneficiary_name' => $beneficiary->name
-        ]);
-
-        $resident = \App\Models\Resident::whereHas('profile', function($query) use ($beneficiary) {
-            // Try to match by name parts
-            $nameParts = explode(' ', trim($beneficiary->name));
-            if (count($nameParts) >= 2) {
-                $firstName = $nameParts[0];
-                $lastName = end($nameParts);
-                \Log::info('Searching with name parts', [
-                    'first_name' => $firstName,
-                    'last_name' => $lastName
-                ]);
-                $query->where('first_name', 'LIKE', '%' . $firstName . '%')
-                      ->where('last_name', 'LIKE', '%' . $lastName . '%');
-            }
-        })->with('profile')->first();
-
-        \Log::info('Resident search result', [
-            'resident_found' => !!$resident,
-            'resident_id' => $resident->id ?? 'none',
-            'resident_name' => $resident ? $resident->first_name . ' ' . $resident->last_name : 'none',
-            'has_profile' => $resident && $resident->profile ? 'yes' : 'no'
-        ]);
-
-        if ($resident && $resident->profile) {
-            // Update the resident's profile to enable/disable My Benefits
-            $profile = $resident->profile;
-            
-            \Log::info('Current profile state', [
-                'profile_id' => $profile->id,
-                'current_my_benefits_enabled' => $profile->my_benefits_enabled,
-                'current_permissions' => $profile->permissions
-            ]);
-            
-            // Normalize permissions
-            $permissions = $profile->permissions ?? [];
-            if (is_string($permissions)) {
-                $decoded = json_decode($permissions, true);
-                $permissions = is_array($decoded) ? $decoded : [];
-            }
-            if (!is_array($permissions)) {
-                $permissions = (array) $permissions;
-            }
-
-            // Set the my_benefits flag in permissions
-            $permissions['my_benefits'] = (bool) $data['enabled'];
-            
-            \Log::info('Updating profile with new values', [
-                'new_permissions' => $permissions,
-                'new_my_benefits_enabled' => (bool) $data['enabled']
-            ]);
-            
-            // Update both the permissions and the explicit boolean field
-            $profile->permissions = $permissions;
-            $profile->my_benefits_enabled = (bool) $data['enabled'];
-            $profile->save();
-
-            \Log::info('Updated resident profile for My Benefits', [
-                'resident_id' => $resident->id,
-                'beneficiary_id' => $beneficiary->id,
-                'enabled' => $data['enabled'],
-                'profile_updated' => true,
-                'final_my_benefits_enabled' => $profile->my_benefits_enabled,
-                'final_permissions' => $profile->permissions
-            ]);
-        } else {
-            \Log::warning('Could not find resident profile for beneficiary', [
-                'beneficiary_id' => $beneficiary->id,
-                'beneficiary_name' => $beneficiary->name,
-                'search_attempted' => true
-            ]);
-        }
 
         // Return the updated status
         return response()->json([
-            'message' => 'My Benefits status updated successfully',
-            'enabled' => $beneficiary->my_benefits_enabled
+            'message' => 'Visibility status updated successfully',
+            'visible' => $beneficiary->visible_to_resident
         ]);
     }
+
 
     public function destroy($id)
     {
@@ -317,5 +236,361 @@ class BeneficiaryController extends Controller
         }
         $beneficiary->delete();
         return response()->json(['message' => 'Deleted']);
+    }
+
+    /**
+     * Get program tracking information for a beneficiary
+     */
+    public function getProgramTracking(Request $request, $id)
+    {
+        $user = $request->user();
+        
+        // Find the resident record for the current user
+        $resident = \App\Models\Resident::where('user_id', $user->id)->first();
+        
+        if (!$resident) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resident profile not found'
+            ], 400);
+        }
+
+        // Get the beneficiary record
+        $beneficiary = Beneficiary::with(['program', 'resident'])
+            ->where('id', $id)
+            ->where('visible_to_resident', true)
+            ->where(function($query) use ($resident) {
+                $firstName = trim($resident->first_name);
+                $lastName = trim($resident->last_name);
+                
+                $query->where(function($q) use ($firstName, $lastName) {
+                    $q->where('name', 'LIKE', '%' . $firstName . '%')
+                      ->where('name', 'LIKE', '%' . $lastName . '%');
+                });
+            })
+            ->first();
+
+        if (!$beneficiary) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Program not found or access denied'
+            ], 404);
+        }
+
+        // Get the application submission data
+        $submission = \App\Models\ApplicationSubmission::with([
+            'form.program',
+            'submissionData.field',
+            'reviewer'
+        ])
+        ->where('resident_id', $resident->id)
+        ->whereHas('form', function($query) use ($beneficiary) {
+            $query->where('program_id', $beneficiary->program_id);
+        })
+        ->first();
+
+        // Determine tracking stage based on status and payout date
+        $trackingStage = $this->determineTrackingStage($beneficiary, $submission, $beneficiary->program);
+        
+        // Format submission data
+        $submissionData = [];
+        if ($submission) {
+            foreach ($submission->submissionData as $data) {
+                $field = $data->field;
+                if ($field) {
+                    $submissionData[$field->field_name] = [
+                        'label' => $field->field_label,
+                        'value' => $data->field_value,
+                        'type' => $field->field_type,
+                        'is_file' => $field->field_type === 'file',
+                        'file_url' => $data->getFileUrl(),
+                        'file_original_name' => $data->file_original_name,
+                        'file_size' => $data->file_size
+                    ];
+                }
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'beneficiary' => [
+                    'id' => $beneficiary->id,
+                    'name' => $beneficiary->name,
+                    'beneficiary_type' => $beneficiary->beneficiary_type,
+                    'assistance_type' => $beneficiary->assistance_type,
+                    'amount' => $beneficiary->amount,
+                    'status' => $beneficiary->status,
+                    'application_date' => $beneficiary->application_date,
+                    'approved_date' => $beneficiary->approved_date,
+                    'remarks' => $beneficiary->remarks,
+                    'proof_of_payout' => $beneficiary->proof_of_payout,
+                    'proof_of_payout_url' => $beneficiary->proof_of_payout ? asset('storage/' . $beneficiary->proof_of_payout) : null
+                ],
+                'program' => $beneficiary->program ? [
+                    'id' => $beneficiary->program->id,
+                    'name' => $beneficiary->program->name,
+                    'description' => $beneficiary->program->description
+                ] : null,
+                'submission' => $submission ? [
+                    'id' => $submission->id,
+                    'status' => $submission->status,
+                    'submitted_at' => $submission->submitted_at,
+                    'reviewed_at' => $submission->reviewed_at,
+                    'admin_notes' => $submission->admin_notes,
+                    'reviewer' => $submission->reviewer ? [
+                        'name' => $submission->reviewer->name,
+                        'email' => $submission->reviewer->email
+                    ] : null,
+                    'submission_data' => $submissionData
+                ] : null,
+                'tracking' => [
+                    'current_stage' => $trackingStage,
+                    'payout_date' => $beneficiary->program ? $beneficiary->program->payout_date : null,
+                    'is_paid' => $beneficiary->is_paid,
+                    'stages' => [
+                        [
+                            'stage' => 1,
+                            'title' => 'Application Approved',
+                            'description' => 'Your application has been approved',
+                            'completed' => $trackingStage >= 1,
+                            'active' => $trackingStage === 1
+                        ],
+                        [
+                            'stage' => 2,
+                            'title' => 'Waiting for Payout',
+                            'description' => $beneficiary->program && $beneficiary->program->payout_date 
+                                ? 'Your benefit payout is on ' . $beneficiary->program->payout_date->format('F j, Y \a\t g:i A')
+                                : 'Processing your benefit payout',
+                            'completed' => $trackingStage >= 2,
+                            'active' => $trackingStage === 2
+                        ],
+                        [
+                            'stage' => 3,
+                            'title' => 'Upload Proof of Payout',
+                            'description' => $beneficiary->is_paid 
+                                ? 'Upload proof after receiving payout (You have been marked as paid)'
+                                : 'Upload proof after receiving payout',
+                            'completed' => $trackingStage >= 3,
+                            'active' => $trackingStage === 3
+                        ],
+                        [
+                            'stage' => 4,
+                            'title' => 'Completed',
+                            'description' => 'Program completed successfully',
+                            'completed' => $trackingStage >= 4,
+                            'active' => $trackingStage === 4
+                        ]
+                    ]
+                ]
+            ]
+        ]);
+    }
+
+    /**
+     * Upload proof of payout
+     */
+    public function uploadProofOfPayout(Request $request, $id)
+    {
+        $user = $request->user();
+        
+        // Find the resident record for the current user
+        $resident = \App\Models\Resident::where('user_id', $user->id)->first();
+        
+        if (!$resident) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resident profile not found'
+            ], 400);
+        }
+
+        // Get the beneficiary record
+        $beneficiary = Beneficiary::with(['program'])
+            ->where('id', $id)
+            ->where('visible_to_resident', true)
+            ->where(function($query) use ($resident) {
+                $firstName = trim($resident->first_name);
+                $lastName = trim($resident->last_name);
+                
+                $query->where(function($q) use ($firstName, $lastName) {
+                    $q->where('name', 'LIKE', '%' . $firstName . '%')
+                      ->where('name', 'LIKE', '%' . $lastName . '%');
+                });
+            })
+            ->first();
+
+        if (!$beneficiary) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Program not found or access denied'
+            ], 404);
+        }
+        
+        // Validate the request
+        $request->validate([
+            'proof_file' => 'required|file|mimes:jpeg,png,jpg,pdf|max:10240', // 10MB max
+            'comment' => 'required|string|max:1000'
+        ]);
+
+        // Delete old proof if exists
+        if ($beneficiary->proof_of_payout) {
+            Storage::delete($beneficiary->proof_of_payout);
+        }
+
+        // Store the new proof file
+        $file = $request->file('proof_file');
+        $path = $file->store('proof-of-payouts');
+
+        // Update the beneficiary record
+        $beneficiary->proof_of_payout = $path;
+        $beneficiary->proof_comment = $request->comment;
+        $beneficiary->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Proof of payout uploaded successfully',
+            'data' => [
+                'proof_url' => asset('storage/' . $path),
+                'file_name' => $file->getClientOriginalName(),
+                'file_size' => $file->getSize()
+            ]
+        ]);
+    }
+
+    /**
+     * Determine the current tracking stage based on beneficiary and submission status
+     */
+    private function determineTrackingStage($beneficiary, $submission, $program)
+    {
+        // Stage 1: Application approved
+        if ($beneficiary->status === 'Approved' && $submission && $submission->status === 'approved') {
+            // Stage 2: Waiting for payout (if not marked as paid yet)
+            if (!$beneficiary->is_paid) {
+                return 2;
+            }
+            // Stage 3: Marked as paid, need to upload proof
+            else if ($beneficiary->is_paid && !$beneficiary->proof_of_payout) {
+                return 3;
+            }
+            // Stage 4: Proof uploaded, completed
+            else {
+                return 4;
+            }
+        }
+        
+        // If not approved yet, return stage 1
+        return 1;
+    }
+
+    /**
+     * Mark a beneficiary as paid
+     */
+    public function markPaid(Request $request, $id)
+    {
+        try {
+            $beneficiary = Beneficiary::with('program')->findOrFail($id);
+            
+            \Log::info('Starting receipt generation for beneficiary', [
+                'beneficiary_id' => $beneficiary->id,
+                'beneficiary_name' => $beneficiary->name,
+                'program_id' => $beneficiary->program_id
+            ]);
+            
+            // Generate receipt
+            $receiptService = new \App\Services\ReceiptService();
+            $receiptData = $receiptService->generateReceipt($beneficiary);
+            
+            \Log::info('Receipt generated successfully', [
+                'beneficiary_id' => $beneficiary->id,
+                'receipt_path' => $receiptData['path'],
+                'receipt_number' => $receiptData['receipt_number']
+            ]);
+            
+            // Update the beneficiary to mark as paid and store receipt info
+            $beneficiary->update([
+                'is_paid' => true,
+                'paid_at' => now(),
+                'receipt_path' => $receiptData['path'],
+                'receipt_number' => $receiptData['receipt_number']
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Beneficiary marked as paid successfully',
+                'beneficiary' => $beneficiary,
+                'receipt' => [
+                    'url' => $receiptData['url'],
+                    'filename' => $receiptData['filename'],
+                    'receipt_number' => $receiptData['receipt_number']
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Failed to mark beneficiary as paid', [
+                'beneficiary_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to mark beneficiary as paid: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Download receipt for a beneficiary
+     */
+    public function downloadReceipt($id)
+    {
+        try {
+            $beneficiary = Beneficiary::findOrFail($id);
+            
+            \Log::info('Receipt download attempt', [
+                'beneficiary_id' => $beneficiary->id,
+                'receipt_path' => $beneficiary->receipt_path,
+                'receipt_number' => $beneficiary->receipt_number
+            ]);
+            
+            if (!$beneficiary->receipt_path) {
+                \Log::warning('No receipt path found', ['beneficiary_id' => $beneficiary->id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No receipt found for this beneficiary'
+                ], 404);
+            }
+            
+            $filePath = storage_path('app/public/' . $beneficiary->receipt_path);
+            
+            \Log::info('Checking file path', [
+                'file_path' => $filePath,
+                'exists' => file_exists($filePath)
+            ]);
+            
+            if (!file_exists($filePath)) {
+                \Log::warning('Receipt file not found', [
+                    'file_path' => $filePath,
+                    'beneficiary_id' => $beneficiary->id
+                ]);
+        return response()->json([
+                    'success' => false,
+                    'message' => 'Receipt file not found'
+                ], 404);
+            }
+            
+            return response()->download($filePath, $beneficiary->receipt_number . '.pdf');
+            
+        } catch (\Exception $e) {
+            \Log::error('Receipt download error', [
+                'beneficiary_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to download receipt: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

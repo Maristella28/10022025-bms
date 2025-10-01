@@ -26,7 +26,7 @@ class ApplicationSubmissionData extends Model
 
     public function submission(): BelongsTo
     {
-        return $this->belongsTo(ApplicationSubmission::class);
+        return $this->belongsTo(ApplicationSubmission::class, 'submission_id');
     }
 
     public function field(): BelongsTo

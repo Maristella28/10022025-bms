@@ -15,6 +15,7 @@ class Beneficiary extends Model
         'beneficiary_type',
         'status',
         'my_benefits_enabled',
+        'visible_to_resident',
         'assistance_type',
         'amount',
         'contact_number',
@@ -24,6 +25,17 @@ class Beneficiary extends Model
         'approved_date',
         'remarks',
         'attachment',
+        'proof_of_payout',
+        'is_paid',
+        'paid_at',
+        'proof_comment',
+        'receipt_path',
+        'receipt_number',
+    ];
+
+    protected $casts = [
+        'is_paid' => 'boolean',
+        'paid_at' => 'datetime',
     ];
 
     public function disbursements()

@@ -45,6 +45,7 @@ export const routeConfig = {
     { path: "staff", element: null, module: "organizationalChart" },
     { path: "charterList", element: null, module: "blotterAppointment" },
     { path: "myBenefits", element: null, module: "myBenefits" },
+    { path: "enrolledPrograms", element: null, module: "enrolledPrograms" },
     { path: "addFeedback", element: null, module: "addFeedback" },
     { path: "modules/Programs/ProgramAnnouncements", element: null, module: "programAnnouncements" }
   ],

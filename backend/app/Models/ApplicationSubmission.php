@@ -43,7 +43,7 @@ class ApplicationSubmission extends Model
 
     public function submissionData(): HasMany
     {
-        return $this->hasMany(ApplicationSubmissionData::class);
+        return $this->hasMany(ApplicationSubmissionData::class, 'submission_id');
     }
 
     public function scopePending($query)

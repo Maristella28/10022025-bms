@@ -45,13 +45,8 @@ class EnsureMyBenefitsAllowed
             }
         }
 
-        if (!$hasFlag) {
-            return response()->json([
-                'message' => 'Access denied. My Benefits is not enabled for your account by the administrator.',
-                'redirect' => '/user/profile'
-            ], 403);
-        }
-
+        // Allow access even if My Benefits is not enabled - the controller will handle the response
+        // This allows residents to see the My Benefits page even if they don't have any benefits yet
         return $next($request);
     }
 }

@@ -156,4 +156,12 @@ class Resident extends Model
     {
         return $this->belongsTo(\App\Models\Profile::class, 'profile_id');
     }
+
+    /**
+     * Relationship: Resident has many application submissions.
+     */
+    public function applicationSubmissions()
+    {
+        return $this->hasMany(\App\Models\ApplicationSubmission::class, 'resident_id');
+    }
 }

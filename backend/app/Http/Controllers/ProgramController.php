@@ -24,6 +24,7 @@ class ProgramController extends Controller
             'amount' => 'nullable|numeric',
             'max_beneficiaries' => 'nullable|integer|min:1',
             'status' => 'required|string',
+            'payout_date' => 'nullable|date|after:now',
         ]);
         $program = Program::create($data);
         return response()->json($program, 201);
@@ -47,6 +48,7 @@ class ProgramController extends Controller
             'amount' => 'nullable|numeric',
             'max_beneficiaries' => 'nullable|integer|min:1',
             'status' => 'required|string',
+            'payout_date' => 'nullable|date|after:now',
         ]);
         \Log::info('Program update data:', $data);
         $program->update($data);

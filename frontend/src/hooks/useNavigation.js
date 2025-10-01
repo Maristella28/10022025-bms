@@ -30,7 +30,7 @@ export const useOptimizedNavigation = () => {
       const importMap = {
         'RequestDocuments': () => import('../pages/residents/RequestDocuments'),
         'Projects': () => import('../pages/residents/Projects'),
-        'MyBenefits': () => import('../pages/residents/MyBenefits'),
+        'MyBenefits': () => import('../pages/residents/modules/Programs/MyBenefits'),
         'BlotterAppointment': () => import('../pages/residents/BlotterAppointment'),
         'OrganizationalChart': () => import('../pages/residents/OrganizationalChart'),
         'DocumentsRecords': () => import('../pages/admin/DocumentsRecords'),

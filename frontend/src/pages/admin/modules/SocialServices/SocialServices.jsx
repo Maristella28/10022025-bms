@@ -17,7 +17,7 @@ const fetchPrograms = async () => {
 
 const fetchBeneficiaries = async () => {
   try {
-    const res = await axios.get('/beneficiaries');
+    const res = await axios.get('/admin/beneficiaries');
     return res.data || [];
   } catch (error) {
     console.error('Error fetching beneficiaries:', error);
@@ -48,6 +48,7 @@ const SocialServices = () => {
       assistanceType: '',
       amount: '',
       maxBeneficiaries: '',
+      payoutDate: '',
     });
   const [programFormError, setProgramFormError] = useState('');
   const [programFormLoading, setProgramFormLoading] = useState(false);
@@ -92,6 +93,7 @@ const SocialServices = () => {
       assistanceType: '',
       amount: '',
       maxBeneficiaries: '',
+      payoutDate: '',
     });
     setProgramFormError('');
     setProgramFormSuccess('');
@@ -111,6 +113,7 @@ const SocialServices = () => {
       assistanceType: program.assistance_type || program.assistanceType || '',
       amount: program.amount || '',
       maxBeneficiaries: program.max_beneficiaries || program.maxBeneficiaries || '',
+      payoutDate: program.payout_date || program.payoutDate || '',
     });
     setProgramFormError('');
     setProgramFormSuccess('');
@@ -152,6 +155,19 @@ const SocialServices = () => {
     return dateString.split('T')[0];
   };
 
+  const toInputDateTime = (dateString) => {
+    if (!dateString) return '';
+    // Handles ISO format like "2024-01-01T00:00:00.000000Z"
+    const date = new Date(dateString);
+    // Format for datetime-local input (YYYY-MM-DDTHH:MM)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
   // --- Enhanced Analytics calculations ---
   const totalPrograms = programs.length;
   const totalBeneficiaries = beneficiaries.length;
@@ -189,9 +205,158 @@ const SocialServices = () => {
   // Top 3 programs by beneficiaries
   const topPrograms = [...beneficiariesPerProgram].sort((a, b) => b.count - a.count).slice(0, 3);
 
+  // Enhanced Analytics Calculations
+  const totalAmount = beneficiaries.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+  const averageAmount = totalBeneficiaries > 0 ? Math.round(totalAmount / totalBeneficiaries) : 0;
+  const paidBeneficiariesCount = beneficiaries.filter(b => b.is_paid).length;
+  const pendingPaymentCount = beneficiaries.filter(b => b.status === 'Approved' && !b.is_paid).length;
+  const paymentRate = totalBeneficiaries > 0 ? Math.round((paidBeneficiariesCount / totalBeneficiaries) * 100) : 0;
+  
+  // Program health calculations
+  const programHealthScores = programs.map(program => {
+    const programBeneficiaries = beneficiaries.filter(b => b.program_id === program.id);
+    const programPaidCount = programBeneficiaries.filter(b => b.is_paid).length;
+    const programPaymentRate = programBeneficiaries.length > 0 ? (programPaidCount / programBeneficiaries.length) * 100 : 0;
+    const completionRate = program.max_beneficiaries ? (programBeneficiaries.length / program.max_beneficiaries) * 100 : 0;
+    
+    // Calculate health score (0-100)
+    let healthScore = 0;
+    if (completionRate >= 90) healthScore += 40;
+    else if (completionRate >= 70) healthScore += 30;
+    else if (completionRate >= 50) healthScore += 20;
+    else healthScore += 10;
+    
+    if (programPaymentRate >= 80) healthScore += 30;
+    else if (programPaymentRate >= 60) healthScore += 20;
+    else if (programPaymentRate >= 40) healthScore += 10;
+    
+    if (program.status === 'ongoing') healthScore += 20;
+    else if (program.status === 'complete') healthScore += 15;
+    else healthScore += 5;
+    
+    return {
+      programId: program.id,
+      programName: program.name,
+      healthScore: Math.min(100, healthScore),
+      completionRate,
+      paymentRate: programPaymentRate,
+      beneficiaryCount: programBeneficiaries.length,
+      maxBeneficiaries: program.max_beneficiaries || 0
+    };
+  });
+
+  const averageHealthScore = programHealthScores.length > 0 
+    ? Math.round(programHealthScores.reduce((sum, p) => sum + p.healthScore, 0) / programHealthScores.length)
+    : 0;
+
+  // Generate actionable suggestions
+  const generateSuggestions = () => {
+    const suggestions = [];
+    
+    // Low health score programs
+    const lowHealthPrograms = programHealthScores.filter(p => p.healthScore < 50);
+    if (lowHealthPrograms.length > 0) {
+      suggestions.push({
+        type: 'warning',
+        icon: '⚠️',
+        title: 'Programs Need Attention',
+        message: `${lowHealthPrograms.length} program${lowHealthPrograms.length > 1 ? 's' : ''} have health scores below 50%.`,
+        action: 'Review program performance and implement improvements',
+        programs: lowHealthPrograms.map(p => p.programName)
+      });
+    }
+
+    // Low completion rates
+    const lowCompletionPrograms = programHealthScores.filter(p => p.completionRate < 30);
+    if (lowCompletionPrograms.length > 0) {
+      suggestions.push({
+        type: 'info',
+        icon: '📈',
+        title: 'Low Enrollment Programs',
+        message: `${lowCompletionPrograms.length} program${lowCompletionPrograms.length > 1 ? 's' : ''} have less than 30% enrollment.`,
+        action: 'Increase outreach efforts and marketing',
+        programs: lowCompletionPrograms.map(p => p.programName)
+      });
+    }
+
+    // Low payment rates
+    const lowPaymentPrograms = programHealthScores.filter(p => p.paymentRate < 50 && p.beneficiaryCount > 0);
+    if (lowPaymentPrograms.length > 0) {
+      suggestions.push({
+        type: 'urgent',
+        icon: '💳',
+        title: 'Payment Processing Issues',
+        message: `${lowPaymentPrograms.length} program${lowPaymentPrograms.length > 1 ? 's' : ''} have low payment rates.`,
+        action: 'Accelerate payment processing and follow up on pending payments',
+        programs: lowPaymentPrograms.map(p => p.programName)
+      });
+    }
+
+    // Draft programs
+    if (draftPrograms > 0) {
+      suggestions.push({
+        type: 'info',
+        icon: '📝',
+        title: 'Draft Programs',
+        message: `${draftPrograms} program${draftPrograms > 1 ? 's' : ''} are still in draft status.`,
+        action: 'Review and publish ready programs to increase activity',
+        programs: programs.filter(p => p.status === 'draft').map(p => p.name)
+      });
+    }
+
+    // High performing programs
+    const highPerformingPrograms = programHealthScores.filter(p => p.healthScore >= 80);
+    if (highPerformingPrograms.length > 0) {
+      suggestions.push({
+        type: 'success',
+        icon: '🎉',
+        title: 'High Performing Programs',
+        message: `${highPerformingPrograms.length} program${highPerformingPrograms.length > 1 ? 's' : ''} are performing excellently.`,
+        action: 'Use these programs as templates for new initiatives',
+        programs: highPerformingPrograms.map(p => p.programName)
+      });
+    }
+
+    // No recent activity
+    const recentPrograms = programs.filter(p => {
+      const createdDate = new Date(p.created_at);
+      const weekAgo = new Date(today.getTime() - (7 * 24 * 60 * 60 * 1000));
+      return createdDate >= weekAgo;
+    });
+    
+    if (recentPrograms.length === 0 && programs.length > 0) {
+      suggestions.push({
+        type: 'info',
+        icon: '📊',
+        title: 'No Recent Activity',
+        message: 'No new programs created in the last 7 days.',
+        action: 'Consider creating new programs or updating existing ones',
+        programs: []
+      });
+    }
+
+    // Default suggestion if no specific issues
+    if (suggestions.length === 0) {
+      suggestions.push({
+        type: 'success',
+        icon: '🎯',
+        title: 'All Systems Running Smoothly',
+        message: 'All programs are performing well within normal parameters.',
+        action: 'Continue current operations and monitor for improvements',
+        programs: []
+      });
+    }
+
+    return suggestions;
+  };
+
+  const suggestions = generateSuggestions();
+
   // State for toggling analytics visibility
   const [showTopPrograms, setShowTopPrograms] = useState(true);
   const [showBeneficiariesBar, setShowBeneficiariesBar] = useState(true);
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [showHealthScoreBreakdown, setShowHealthScoreBreakdown] = useState(false);
 
   // Update charts when filters change
   useEffect(() => {
@@ -515,14 +680,96 @@ const SocialServices = () => {
             </div>
           </div>
 
-          {/* Enhanced Analytics Charts */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <ChartBarIcon className="w-5 h-5" />
-                Program Analytics
-              </h3>
-              <div className="flex flex-col sm:flex-row gap-2">
+          {/* Enhanced Financial and Performance Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="bg-white rounded-2xl shadow-xl border border-purple-100 p-6 flex flex-col items-center justify-center transition-all duration-300 hover:shadow-2xl hover:scale-105 group">
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg mb-3 group-hover:scale-110 transition-transform duration-300">
+                <HeartIcon className="w-6 h-6 text-white" />
+              </div>
+              <div className="text-2xl font-bold text-purple-700 group-hover:text-pink-600 transition-colors duration-300">{paymentRate}%</div>
+              <div className="text-gray-600 text-sm mt-1 font-medium">Payment Rate</div>
+              <div className="text-xs text-gray-500 mt-1">{paidBeneficiariesCount} paid</div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-xl border border-indigo-100 p-6 flex flex-col items-center justify-center transition-all duration-300 hover:shadow-2xl hover:scale-105 group">
+              <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg mb-3 group-hover:scale-110 transition-transform duration-300">
+                <ChartBarIcon className="w-6 h-6 text-white" />
+              </div>
+              <div className="text-2xl font-bold text-indigo-700 group-hover:text-blue-600 transition-colors duration-300">{averageHealthScore}/100</div>
+              <div className="text-gray-600 text-sm mt-1 font-medium">Avg Health Score</div>
+              <div className="text-xs text-gray-500 mt-1">across {totalPrograms} programs</div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-xl border border-green-100 p-6 flex flex-col items-center justify-center transition-all duration-300 hover:shadow-2xl hover:scale-105 group">
+              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg mb-3 group-hover:scale-110 transition-transform duration-300">
+                <DocumentTextIcon className="w-6 h-6 text-white" />
+              </div>
+              <div className="text-2xl font-bold text-green-700 group-hover:text-emerald-600 transition-colors duration-300">₱{totalAmount.toLocaleString()}</div>
+              <div className="text-gray-600 text-sm mt-1 font-medium">Total Budget</div>
+              <div className="text-xs text-gray-500 mt-1">₱{averageAmount.toLocaleString()} avg</div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-xl border border-orange-100 p-6 flex flex-col items-center justify-center transition-all duration-300 hover:shadow-2xl hover:scale-105 group">
+              <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg mb-3 group-hover:scale-110 transition-transform duration-300">
+                <ClockIcon className="w-6 h-6 text-white" />
+              </div>
+              <div className="text-2xl font-bold text-orange-700 group-hover:text-red-600 transition-colors duration-300">{pendingPaymentCount}</div>
+              <div className="text-gray-600 text-sm mt-1 font-medium">Pending Payments</div>
+              <div className="text-xs text-gray-500 mt-1">awaiting processing</div>
+            </div>
+          </div>
+
+          {/* Program Health Score Overview */}
+          <div 
+            className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-6 mb-6 cursor-pointer hover:shadow-lg transition-all duration-200"
+            onClick={() => setShowHealthScoreBreakdown(true)}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-indigo-800">Overall Program Health Score</h3>
+              <div className="flex items-center gap-2">
+                <div className={`px-3 py-1 rounded-full text-sm font-bold ${
+                  averageHealthScore >= 80 ? 'bg-green-100 text-green-800' :
+                  averageHealthScore >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                  averageHealthScore >= 40 ? 'bg-orange-100 text-orange-800' :
+                  'bg-red-100 text-red-800'
+                }`}>
+                  {averageHealthScore >= 80 ? 'Excellent' :
+                   averageHealthScore >= 60 ? 'Good' :
+                   averageHealthScore >= 40 ? 'Fair' : 'Poor'}
+                </div>
+                <span className="text-indigo-600 text-sm">Click to see breakdown</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div 
+                    className={`h-3 rounded-full transition-all duration-1000 ${
+                      averageHealthScore >= 80 ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
+                      averageHealthScore >= 60 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
+                      averageHealthScore >= 40 ? 'bg-gradient-to-r from-orange-500 to-red-500' :
+                      'bg-gradient-to-r from-red-500 to-red-600'
+                    }`}
+                    style={{ width: `${averageHealthScore}%` }}
+                  ></div>
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-indigo-700">{averageHealthScore}/100</div>
+            </div>
+          </div>
+
+          {/* Enhanced Program Analytics Dashboard */}
+          <div className="bg-gradient-to-br from-white to-blue-50 rounded-3xl shadow-2xl border border-blue-100 p-8">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <ChartBarIcon className="w-6 h-6 text-white" />
+                  </div>
+                  Program Analytics Dashboard
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  Comprehensive insights into program performance and trends
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
                 <select
                   value={selectedPeriod}
                   onChange={(e) => {
@@ -530,7 +777,7 @@ const SocialServices = () => {
                     if (e.target.value !== 'month') setSelectedMonth(0);
                     setSelectedYear('');
                   }}
-                  className="px-4 py-2 border-2 border-gray-200 focus:ring-4 focus:ring-green-100 focus:border-green-500 rounded-xl text-sm font-medium bg-white shadow-sm"
+                  className="px-4 py-3 border-2 border-blue-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 rounded-xl text-sm font-semibold bg-white shadow-lg hover:shadow-xl transition-all duration-300"
                 >
                   <option value="month">This Month</option>
                   <option value="year">This Year</option>
@@ -543,7 +790,7 @@ const SocialServices = () => {
                       setSelectedYear(e.target.value);
                       setSelectedMonth(0);
                     }}
-                    className="px-4 py-2 border-2 border-gray-200 focus:ring-4 focus:ring-green-100 focus:border-green-500 rounded-xl text-sm font-medium bg-white shadow-sm"
+                    className="px-4 py-3 border-2 border-blue-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 rounded-xl text-sm font-semibold bg-white shadow-lg hover:shadow-xl transition-all duration-300"
                   >
                     <option value="">Select Year</option>
                     {Array.from({ length: 16 }, (_, i) => currentYear - 10 + i).map(year => (
@@ -555,7 +802,7 @@ const SocialServices = () => {
                   <select
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                    className="px-4 py-2 border-2 border-gray-200 focus:ring-4 focus:ring-green-100 focus:border-green-500 rounded-xl text-sm font-medium bg-white shadow-sm"
+                    className="px-4 py-3 border-2 border-blue-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 rounded-xl text-sm font-semibold bg-white shadow-lg hover:shadow-xl transition-all duration-300"
                   >
                     <option value={0}>All Months</option>
                     {[
@@ -579,98 +826,291 @@ const SocialServices = () => {
                 {(selectedPeriod === 'month' || selectedPeriod === 'year') && !selectedYear && (
                   <select
                     disabled
-                    className="px-4 py-2 border-2 border-gray-300 bg-gray-100 text-gray-500 rounded-xl text-sm font-medium cursor-not-allowed"
+                    className="px-4 py-3 border-2 border-gray-300 bg-gray-100 text-gray-500 rounded-xl text-sm font-semibold cursor-not-allowed"
                   >
                     <option>Select a year first</option>
                   </select>
                 )}
               </div>
             </div>
-            <p className="text-sm text-gray-500 mb-4">
-              {selectedPeriod === 'month' ? `Daily programs created in ${selectedMonth ? `${selectedMonth}/${selectedYear}` : 'current month'}` :
-               selectedPeriod === 'year' ? `Monthly programs created in ${selectedYear || currentYear}` :
-               'Programs created over the last 12 months'}
-            </p>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey={selectedPeriod === 'month' || (selectedPeriod === 'year' && selectedMonth > 0) ? "name" : "name"} />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="programs" stroke="#10b981" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
 
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                <h4 className="text-sm font-semibold text-green-800 mb-2 flex items-center gap-2">
-                  <DocumentTextIcon className="w-4 h-4" />
-                  Most Active Program {selectedPeriod === 'month' ? `(Month ${selectedMonth} ${selectedYear})` : selectedPeriod === 'year' ? `(${selectedYear})` : '(All Time)'}
+            {/* Program Creation Timeline Chart */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
+                    <DocumentTextIcon className="w-4 h-4 text-white" />
+                  </div>
+                  Program Creation Timeline
                 </h4>
-                <p className="text-lg font-bold text-green-900">{getMostActiveProgram(programs, beneficiaries, selectedPeriod, selectedYear, selectedMonth).name || 'N/A'}</p>
-                <p className="text-sm text-green-700">{getMostActiveProgram(programs, beneficiaries, selectedPeriod, selectedYear, selectedMonth).count} beneficiaries</p>
+                <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                  {selectedPeriod === 'month' ? `Daily view - ${selectedMonth ? `${selectedMonth}/${selectedYear}` : 'current month'}` :
+                   selectedPeriod === 'year' ? `Monthly view - ${selectedYear || currentYear}` :
+                   'Last 12 months overview'}
+                </div>
               </div>
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <h4 className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
-                  <UserIcon className="w-4 h-4" />
-                  Average Beneficiaries per Program
-                </h4>
-                <p className="text-lg font-bold text-blue-900">{totalPrograms > 0 ? (totalBeneficiaries / totalPrograms).toFixed(1) : '0.0'}</p>
-                <p className="text-sm text-blue-700">beneficiaries per program</p>
+              <ResponsiveContainer width="100%" height={350}>
+                <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="#666"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis 
+                    stroke="#666"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '12px',
+                      boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+                    }}
+                    labelStyle={{ color: '#374151', fontWeight: 'bold' }}
+                  />
+                  <Legend />
+                  <Line 
+                    type="monotone" 
+                    dataKey="programs" 
+                    stroke="#10b981" 
+                    strokeWidth={3}
+                    dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 2 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Program Performance Metrics */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+              {/* Most Active Program */}
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border border-green-200 shadow-lg hover:shadow-xl transition-all duration-300">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <DocumentTextIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-green-800">Most Active Program</h4>
+                    <p className="text-sm text-green-600">
+                      {selectedPeriod === 'month' ? `Month ${selectedMonth} ${selectedYear}` : 
+                       selectedPeriod === 'year' ? `Year ${selectedYear}` : 'All Time'}
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-2xl font-bold text-green-900 truncate">
+                    {getMostActiveProgram(programs, beneficiaries, selectedPeriod, selectedYear, selectedMonth).name || 'No Programs'}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-3xl font-bold text-green-700">
+                      {getMostActiveProgram(programs, beneficiaries, selectedPeriod, selectedYear, selectedMonth).count}
+                    </span>
+                    <span className="text-sm text-green-600 font-medium">beneficiaries</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Average Performance */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200 shadow-lg hover:shadow-xl transition-all duration-300">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <UserIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-blue-800">Average Performance</h4>
+                    <p className="text-sm text-blue-600">Per Program</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold text-blue-900">
+                      {totalPrograms > 0 ? (totalBeneficiaries / totalPrograms).toFixed(1) : '0.0'}
+                    </span>
+                    <span className="text-sm text-blue-600 font-medium">beneficiaries</span>
+                  </div>
+                  <div className="text-sm text-blue-700">
+                    Across {totalPrograms} programs
+                  </div>
+                </div>
+              </div>
+
+              {/* Program Status Overview */}
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-6 border border-purple-200 shadow-lg hover:shadow-xl transition-all duration-300">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <CheckCircleIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-purple-800">Status Distribution</h4>
+                    <p className="text-sm text-purple-600">Program Status</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-purple-700">Ongoing</span>
+                    <span className="text-lg font-bold text-purple-900">{activePrograms}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-purple-700">Draft</span>
+                    <span className="text-lg font-bold text-purple-900">{draftPrograms}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-purple-700">Completed</span>
+                    <span className="text-lg font-bold text-purple-900">{completedPrograms}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Program Status Distribution Pie Chart */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <ChartBarIcon className="w-5 h-5" />
-              Program Status Distribution
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={pieChartData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {pieChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+          {/* Program Status Distribution */}
+          <div className="bg-gradient-to-br from-white to-purple-50 rounded-3xl shadow-2xl border border-purple-100 p-8">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <ChartBarIcon className="w-6 h-6 text-white" />
+                  </div>
+                  Program Status Distribution
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  Visual breakdown of program statuses across your portfolio
+                </p>
+              </div>
+              <div className="text-sm text-purple-600 bg-purple-100 px-4 py-2 rounded-full font-medium">
+                {selectedPeriod === 'month' ? `Month ${selectedMonth} ${selectedYear}` : 
+                 selectedPeriod === 'year' ? `Year ${selectedYear}` : 'All Time'}
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Pie Chart */}
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <h4 className="text-lg font-semibold text-gray-800 mb-6 text-center">Status Breakdown</h4>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={pieChartData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={100}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {pieChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{
+                        backgroundColor: 'white',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '12px',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Status Legend */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-800 mb-4">Status Details</h4>
+                {pieChartData.map((entry, index) => (
+                  <div key={entry.name} className="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300">
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-4 h-4 rounded-full shadow-sm"
+                        style={{ backgroundColor: entry.color }}
+                      ></div>
+                      <span className="font-medium text-gray-700">{entry.name}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-2xl font-bold text-gray-900">{entry.value}</div>
+                      <div className="text-sm text-gray-500">programs</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
-          {/* Beneficiaries per Program Bar Chart */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <UserIcon className="w-5 h-5" />
-              Beneficiaries per Program (Top 8)
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={barChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip
-                  formatter={(value, name) => [value, 'Beneficiaries']}
-                  labelFormatter={(label) => {
-                    const item = barChartData.find(d => d.name === label);
-                    return item ? item.fullName : label;
-                  }}
-                />
-                <Legend />
-                <Bar dataKey="beneficiaries" fill="#3b82f6" />
-              </BarChart>
-            </ResponsiveContainer>
+          {/* Program Performance Comparison */}
+          <div className="bg-gradient-to-br from-white to-indigo-50 rounded-3xl shadow-2xl border border-indigo-100 p-8">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <UserIcon className="w-6 h-6 text-white" />
+                  </div>
+                  Program Performance Comparison
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  Top performing programs by beneficiary count
+                </p>
+              </div>
+              <div className="text-sm text-indigo-600 bg-indigo-100 px-4 py-2 rounded-full font-medium">
+                Top 8 Programs
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart data={barChartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="#666"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    angle={-45}
+                    textAnchor="end"
+                    height={80}
+                  />
+                  <YAxis 
+                    stroke="#666"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '12px',
+                      boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+                    }}
+                    labelStyle={{ color: '#374151', fontWeight: 'bold' }}
+                    formatter={(value, name) => [value, 'Beneficiaries']}
+                    labelFormatter={(label) => {
+                      const item = barChartData.find(d => d.name === label);
+                      return item ? item.fullName : label;
+                    }}
+                  />
+                  <Legend />
+                  <Bar 
+                    dataKey="beneficiaries" 
+                    fill="url(#colorGradient)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <defs>
+                    <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3b82f6" />
+                      <stop offset="100%" stopColor="#1d4ed8" />
+                    </linearGradient>
+                  </defs>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
           {/* Add New Program Button - Before Top Programs */}
@@ -684,80 +1124,268 @@ const SocialServices = () => {
             </button>
           </div>
 
-          {/* Top Programs Table with toggle */}
-          <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6">
-            <div className="flex items-center justify-between mb-2">
-              <div className="font-bold text-lg text-blue-700">Top 3 Programs by Beneficiaries (Detailed)</div>
+          {/* Top Programs Performance Table */}
+          <div className="bg-gradient-to-br from-white to-emerald-50 rounded-3xl shadow-2xl border border-emerald-100 p-8">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <DocumentTextIcon className="w-6 h-6 text-white" />
+                  </div>
+                  Top Performing Programs
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  Programs ranked by beneficiary count and performance metrics
+                </p>
+              </div>
               <button
-                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold transition"
+                className="px-4 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-semibold rounded-xl transition-all duration-300 shadow-sm hover:shadow-md"
                 onClick={() => setShowTopPrograms(v => !v)}
               >
-                {showTopPrograms ? 'Hide' : 'Show'}
+                {showTopPrograms ? 'Hide Details' : 'Show Details'}
               </button>
             </div>
+            
             {showTopPrograms && (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-600">
-                    <th className="py-1">Program</th>
-                    <th className="py-1">Description</th>
-                    <th className="py-1">Date Range</th>
-                    <th className="py-1">Status</th>
-                    <th className="py-1">Beneficiaries</th>
-                    <th className="py-1">% of Total</th>
-                    <th className="py-1">Details</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topPrograms.map(p => {
-                    const program = programs.find(pr => pr.id === p.id) || {};
-                    const percent = totalBeneficiaries ? ((p.count / totalBeneficiaries) * 100).toFixed(1) : '0.0';
-                    return (
-                      <tr key={p.id} className="border-t border-gray-100">
-                        <td className="py-1 font-medium">{p.name}</td>
-                        <td className="py-1">{program.description || 'N/A'}</td>
-                        <td className="py-1">{formatDate(program.start_date)} - {formatDate(program.end_date)}</td>
-                        <td className="py-1">{program.status ? program.status.charAt(0).toUpperCase() + program.status.slice(1) : 'N/A'}</td>
-                        <td className="py-1">{p.count}</td>
-                        <td className="py-1">{percent}%</td>
-                        <td className="py-1">
-                          <button
-                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold transition"
-                            onClick={() => navigate(`/admin/social-services/program/${p.id}`)}
-                          >
-                            View Details
-                          </button>
-                        </td>
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gradient-to-r from-emerald-50 to-green-50">
+                      <tr>
+                        <th className="px-6 py-4 text-left text-sm font-bold text-emerald-800">Rank</th>
+                        <th className="px-6 py-4 text-left text-sm font-bold text-emerald-800">Program</th>
+                        <th className="px-6 py-4 text-left text-sm font-bold text-emerald-800">Description</th>
+                        <th className="px-6 py-4 text-left text-sm font-bold text-emerald-800">Date Range</th>
+                        <th className="px-6 py-4 text-left text-sm font-bold text-emerald-800">Status</th>
+                        <th className="px-6 py-4 text-left text-sm font-bold text-emerald-800">Beneficiaries</th>
+                        <th className="px-6 py-4 text-left text-sm font-bold text-emerald-800">% of Total</th>
+                        <th className="px-6 py-4 text-left text-sm font-bold text-emerald-800">Actions</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {topPrograms.map((p, index) => {
+                        const program = programs.find(pr => pr.id === p.id) || {};
+                        const percent = totalBeneficiaries ? ((p.count / totalBeneficiaries) * 100).toFixed(1) : '0.0';
+                        return (
+                          <tr key={p.id} className="hover:bg-emerald-50 transition-colors duration-200">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                                  index === 0 ? 'bg-gradient-to-br from-yellow-400 to-orange-500' :
+                                  index === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-400' :
+                                  index === 2 ? 'bg-gradient-to-br from-amber-600 to-yellow-700' :
+                                  'bg-gradient-to-br from-emerald-500 to-green-600'
+                                }`}>
+                                  {index + 1}
+                                </div>
+                                {index < 3 && (
+                                  <span className="text-xs text-gray-500 font-medium">
+                                    {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="font-semibold text-gray-900">{p.name}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm text-gray-600 max-w-xs truncate">
+                                {program.description || 'No description available'}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm text-gray-600">
+                                {formatDate(program.start_date)} - {formatDate(program.end_date)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                program.status === 'ongoing' ? 'bg-green-100 text-green-800' :
+                                program.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
+                                program.status === 'complete' ? 'bg-blue-100 text-blue-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {program.status ? program.status.charAt(0).toUpperCase() + program.status.slice(1) : 'N/A'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <span className="text-2xl font-bold text-emerald-700">{p.count}</span>
+                                <span className="text-sm text-gray-500">beneficiaries</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <div className="w-16 bg-gray-200 rounded-full h-2">
+                                  <div 
+                                    className="bg-gradient-to-r from-emerald-500 to-green-600 h-2 rounded-full transition-all duration-500"
+                                    style={{ width: `${Math.min(100, parseFloat(percent))}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-sm font-semibold text-gray-700">{percent}%</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <button
+                                className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-lg text-sm font-semibold transition-all duration-300 shadow-sm hover:shadow-md transform hover:scale-105"
+                                onClick={() => navigate(`/admin/social-services/program/${p.id}`)}
+                              >
+                                View Details
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
           </div>
-          {/* Simple Bar Chart Visualization with toggle */}
-          <div className="bg-white rounded-2xl shadow-md border border-indigo-100 p-6">
-            <div className="flex items-center justify-between mb-2">
-              <div className="font-bold text-lg text-indigo-700">Beneficiaries per Program</div>
+          {/* Program Performance Overview */}
+          <div className="bg-gradient-to-br from-white to-indigo-50 rounded-3xl shadow-2xl border border-indigo-100 p-8">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <UserIcon className="w-6 h-6 text-white" />
+                  </div>
+                  Program Performance Overview
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  Visual comparison of beneficiary distribution across all programs
+                </p>
+              </div>
               <button
-                className="text-xs px-3 py-1 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-semibold transition"
+                className="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-semibold rounded-xl transition-all duration-300 shadow-sm hover:shadow-md"
                 onClick={() => setShowBeneficiariesBar(v => !v)}
               >
-                {showBeneficiariesBar ? 'Hide' : 'Show'}
+                {showBeneficiariesBar ? 'Hide Overview' : 'Show Overview'}
               </button>
             </div>
+            
             {showBeneficiariesBar && (
-              <div className="w-full flex flex-col gap-2">
-                {beneficiariesPerProgram.map(p => (
-                  <div key={p.id} className="flex items-center gap-2">
-                    <span className="w-32 truncate text-gray-700 text-xs">{p.name}</span>
-                    <div className="flex-1 bg-indigo-100 rounded h-4 relative">
-                      <div
-                        className="bg-indigo-500 h-4 rounded"
-                        style={{ width: `${totalBeneficiaries ? (p.count / Math.max(...beneficiariesPerProgram.map(x => x.count), 1)) * 100 : 0}%`, minWidth: p.count > 0 ? '8px' : '0' }}
-                      ></div>
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <div className="space-y-4">
+                  {beneficiariesPerProgram.map((p, index) => {
+                    const maxCount = Math.max(...beneficiariesPerProgram.map(x => x.count), 1);
+                    const percentage = totalBeneficiaries ? (p.count / maxCount) * 100 : 0;
+                    const program = programs.find(pr => pr.id === p.id) || {};
+                    
+                    return (
+                      <div key={p.id} className="group hover:bg-indigo-50 rounded-xl p-4 transition-all duration-300">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                              {index + 1}
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-gray-900 group-hover:text-indigo-700 transition-colors duration-300">
+                                {p.name}
+                              </h4>
+                              <p className="text-sm text-gray-500">
+                                {program.status ? program.status.charAt(0).toUpperCase() + program.status.slice(1) : 'Unknown Status'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-bold text-indigo-700">{p.count}</div>
+                            <div className="text-sm text-gray-500">beneficiaries</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1 bg-gray-200 rounded-full h-3 relative overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-indigo-500 to-blue-600 h-3 rounded-full transition-all duration-1000 ease-out"
+                              style={{ 
+                                width: `${percentage}%`, 
+                                minWidth: p.count > 0 ? '8px' : '0' 
+                              }}
+                            ></div>
+                          </div>
+                          <div className="text-sm font-semibold text-indigo-700 min-w-[3rem] text-right">
+                            {percentage.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Actionable Suggestions Section */}
+          <div className="bg-gradient-to-r from-gray-50 to-blue-50 border border-gray-200 rounded-xl p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <span className="text-xl">💡</span>
+                Actionable Suggestions
+              </h3>
+              <button
+                className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg font-semibold text-sm shadow transition-all duration-200"
+                onClick={() => setShowSuggestions(v => !v)}
+              >
+                {showSuggestions ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            
+            {showSuggestions && (
+              <div className="space-y-3">
+                {suggestions.map((suggestion, index) => (
+                  <div 
+                    key={index}
+                    className={`p-4 rounded-lg border-l-4 ${
+                      suggestion.type === 'urgent' ? 'bg-red-50 border-red-400' :
+                      suggestion.type === 'warning' ? 'bg-yellow-50 border-yellow-400' :
+                      suggestion.type === 'success' ? 'bg-green-50 border-green-400' :
+                      'bg-blue-50 border-blue-400'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl flex-shrink-0">{suggestion.icon}</span>
+                      <div className="flex-1">
+                        <h4 className={`font-semibold ${
+                          suggestion.type === 'urgent' ? 'text-red-800' :
+                          suggestion.type === 'warning' ? 'text-yellow-800' :
+                          suggestion.type === 'success' ? 'text-green-800' :
+                          'text-blue-800'
+                        }`}>
+                          {suggestion.title}
+                        </h4>
+                        <p className={`text-sm mt-1 ${
+                          suggestion.type === 'urgent' ? 'text-red-700' :
+                          suggestion.type === 'warning' ? 'text-yellow-700' :
+                          suggestion.type === 'success' ? 'text-green-700' :
+                          'text-blue-700'
+                        }`}>
+                          {suggestion.message}
+                        </p>
+                        <div className={`mt-2 px-3 py-1 rounded-full text-xs font-medium inline-block ${
+                          suggestion.type === 'urgent' ? 'bg-red-100 text-red-800' :
+                          suggestion.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
+                          suggestion.type === 'success' ? 'bg-green-100 text-green-800' :
+                          'bg-blue-100 text-blue-800'
+                        }`}>
+                          💡 {suggestion.action}
+                        </div>
+                        {suggestion.programs && suggestion.programs.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs text-gray-600 mb-1">Affected Programs:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {suggestion.programs.map((programName, idx) => (
+                                <span 
+                                  key={idx}
+                                  className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs"
+                                >
+                                  {programName}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <span className="ml-2 text-indigo-700 font-semibold text-xs">{p.count}</span>
                   </div>
                 ))}
               </div>
@@ -997,6 +1625,48 @@ const SocialServices = () => {
                         required
                       />
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium text-blue-700 mb-1">Payout Date & Time (Optional)</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="datetime-local"
+                          value={toInputDateTime(programForm.payoutDate)}
+                          onChange={e => {
+                            const value = e.target.value;
+                            if (value) {
+                              // Convert to ISO format for backend
+                              const date = new Date(value);
+                              setProgramForm(f => ({ ...f, payoutDate: date.toISOString() }));
+                            } else {
+                              setProgramForm(f => ({ ...f, payoutDate: '' }));
+                            }
+                          }}
+                          min={new Date().toISOString().slice(0, 16)} // Prevent past dates
+                          className="flex-1 border border-blue-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 bg-white shadow-sm text-blue-900 hover:shadow-md focus:shadow-lg"
+                        />
+                        {programForm.payoutDate && (
+                          <button
+                            type="button"
+                            onClick={() => setProgramForm(f => ({ ...f, payoutDate: '' }))}
+                            className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium transition-all duration-300 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-red-300"
+                            title="Remove payout date"
+                          >
+                            <XMarkIcon className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-xs text-blue-600 mt-1">
+                        Set a specific date and time for benefit payouts. Cannot be set to a past date/time.
+                      </p>
+                      {programForm.payoutDate && new Date(programForm.payoutDate) < new Date() && (
+                        <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
+                          Payout date cannot be in the past
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -1084,6 +1754,13 @@ const SocialServices = () => {
                       e.preventDefault();
                       setProgramFormError('');
                       setProgramFormSuccess('');
+                      
+                      // Validate payout date is not in the past
+                      if (programForm.payoutDate && new Date(programForm.payoutDate) < new Date()) {
+                        setProgramFormError('Payout date cannot be set to a past date/time.');
+                        return;
+                      }
+                      
                       setProgramFormLoading(true);
                       try {
                         const data = {
@@ -1096,6 +1773,7 @@ const SocialServices = () => {
                           assistance_type: programForm.assistanceType,
                           amount: programForm.amount,
                           max_beneficiaries: programForm.maxBeneficiaries,
+                          payout_date: programForm.payoutDate || null,
                         };
 
                         if (editProgram && editProgram.id) {
@@ -1106,7 +1784,7 @@ const SocialServices = () => {
                         
                         setProgramFormSuccess(editProgram && editProgram.id ? 'Program updated successfully!' : 'Program added successfully!');
                         setShowProgramModal(false);
-                        setProgramForm({ name: '', description: '', startDate: '', endDate: '', status: '', beneficiaryType: '', assistanceType: '', amount: '', maxBeneficiaries: '' });
+                        setProgramForm({ name: '', description: '', startDate: '', endDate: '', status: '', beneficiaryType: '', assistanceType: '', amount: '', maxBeneficiaries: '', payoutDate: '' });
                         
                         // Refresh programs list
                         const updatedPrograms = await fetchPrograms();
@@ -1125,6 +1803,97 @@ const SocialServices = () => {
                       <><CheckCircleIcon className="w-5 h-5" /> Save Program</>
                     )}
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Health Score Breakdown Modal */}
+        {showHealthScoreBreakdown && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-800">Program Health Score Breakdown</h2>
+                  <button
+                    onClick={() => setShowHealthScoreBreakdown(false)}
+                    className="text-gray-500 hover:text-gray-700 text-2xl"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Overall Health Score */}
+                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xl font-bold text-indigo-800">Overall Health Score</h3>
+                      <div className="text-3xl font-bold text-indigo-700">
+                        {averageHealthScore}/100
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-4">
+                      <div 
+                        className={`h-4 rounded-full transition-all duration-1000 ${
+                          averageHealthScore >= 80 ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
+                          averageHealthScore >= 60 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
+                          averageHealthScore >= 40 ? 'bg-gradient-to-r from-orange-500 to-red-500' :
+                          'bg-gradient-to-r from-red-500 to-red-600'
+                        }`}
+                        style={{ width: `${averageHealthScore}%` }}
+                      ></div>
+                    </div>
+                    <div className="mt-2 text-sm text-indigo-600">
+                      Average health score across {totalPrograms} programs
+                    </div>
+                  </div>
+
+                  {/* Individual Program Scores */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-800">Individual Program Health Scores</h3>
+                    {programHealthScores.map((program, index) => (
+                      <div key={program.programId} className="border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-semibold text-gray-800">{program.programName}</h4>
+                          <span className="text-lg font-bold text-gray-700">{program.healthScore}/100</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                          <div 
+                            className={`h-2 rounded-full transition-all duration-500 ${
+                              program.healthScore >= 80 ? 'bg-green-500' :
+                              program.healthScore >= 60 ? 'bg-yellow-500' :
+                              program.healthScore >= 40 ? 'bg-orange-500' :
+                              'bg-red-500'
+                            }`}
+                            style={{ width: `${program.healthScore}%` }}
+                          ></div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4 text-sm text-gray-600">
+                          <div>
+                            <span className="font-medium">Completion:</span> {program.completionRate.toFixed(1)}%
+                          </div>
+                          <div>
+                            <span className="font-medium">Payment Rate:</span> {program.paymentRate.toFixed(1)}%
+                          </div>
+                          <div>
+                            <span className="font-medium">Beneficiaries:</span> {program.beneficiaryCount}/{program.maxBeneficiaries}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Health Score Explanation */}
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                    <h3 className="text-lg font-semibold text-yellow-800 mb-2">💡 How Health Scores Are Calculated</h3>
+                    <div className="text-sm text-yellow-700 space-y-2">
+                      <div><strong>Completion Rate (40 points max):</strong> Based on how many beneficiaries are enrolled vs. maximum capacity</div>
+                      <div><strong>Payment Rate (30 points max):</strong> Percentage of approved beneficiaries who have been paid</div>
+                      <div><strong>Program Status (20 points max):</strong> Ongoing programs get full points, completed get partial, draft gets minimal</div>
+                      <div><strong>Additional Factors:</strong> Recent activity, beneficiary satisfaction, and program efficiency</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
