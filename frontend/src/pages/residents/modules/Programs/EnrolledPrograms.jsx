@@ -14,6 +14,11 @@ const EnrolledPrograms = () => {
   const [uploadLoading, setUploadLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [proofComment, setProofComment] = useState('');
+  const [receiptNumber, setReceiptNumber] = useState('');
+  const [receiptValidationError, setReceiptValidationError] = useState('');
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     const fetchEnrolledPrograms = async () => {
@@ -29,7 +34,27 @@ const EnrolledPrograms = () => {
       }
     };
 
+    const fetchNotifications = async () => {
+      try {
+        const response = await axiosInstance.get('/notifications');
+        if (response.data?.success) {
+          setNotifications(response.data.data.notifications || []);
+          setUnreadCount(response.data.data.unread_count || 0);
+        }
+      } catch (err) {
+        console.error('Error fetching notifications:', err);
+      }
+    };
+
     fetchEnrolledPrograms();
+    fetchNotifications();
+
+    // Set up polling for notifications every 30 seconds
+    const notificationInterval = setInterval(fetchNotifications, 30000);
+
+    return () => {
+      clearInterval(notificationInterval);
+    };
   }, []);
 
   const handleBackToBenefits = () => {
@@ -60,6 +85,36 @@ const EnrolledPrograms = () => {
     setTrackingModal({ isOpen: false, data: null });
     setSelectedFile(null);
     setProofComment('');
+    setReceiptNumber('');
+    setReceiptValidationError('');
+  };
+
+  const handleMarkNotificationAsRead = async (notificationId) => {
+    try {
+      await axiosInstance.post(`/notifications/${notificationId}/read`);
+      setNotifications(prev => 
+        prev.map(notif => 
+          notif.id === notificationId 
+            ? { ...notif, is_read: true, read_at: new Date().toISOString() }
+            : notif
+        )
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error('Error marking notification as read:', err);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await axiosInstance.post('/notifications/read-all');
+      setNotifications(prev => 
+        prev.map(notif => ({ ...notif, is_read: true, read_at: new Date().toISOString() }))
+      );
+      setUnreadCount(0);
+    } catch (err) {
+      console.error('Error marking all notifications as read:', err);
+    }
   };
 
   const handleFileSelect = (event) => {
@@ -82,21 +137,29 @@ const EnrolledPrograms = () => {
   };
 
   const handleUploadProof = async () => {
-    if (!selectedFile || !trackingModal.data) return;
+    if (!trackingModal.data) return;
 
-    if (!proofComment.trim()) {
-      alert('Please provide a comment about the proof of payout');
+    // Validate receipt number is provided
+    if (!receiptNumber.trim()) {
+      setReceiptValidationError('Please enter your receipt number');
       return;
     }
 
     try {
       setUploadLoading(true);
+      setReceiptValidationError('');
+      
       const formData = new FormData();
-      formData.append('proof_file', selectedFile);
-      formData.append('comment', proofComment);
+      formData.append('receipt_number', receiptNumber.trim());
+      if (selectedFile) {
+        formData.append('proof_file', selectedFile);
+      }
+      if (proofComment.trim()) {
+        formData.append('comment', proofComment);
+      }
 
       const response = await axiosInstance.post(
-        `/my-benefits/${trackingModal.data.beneficiary.id}/upload-proof`,
+        `/my-benefits/${trackingModal.data.beneficiary.id}/validate-receipt`,
         formData,
         {
           headers: {
@@ -105,29 +168,24 @@ const EnrolledPrograms = () => {
         }
       );
 
-      // Update the tracking data with the new proof
-      setTrackingModal(prev => ({
-        ...prev,
-        data: {
-          ...prev.data,
-          beneficiary: {
-            ...prev.data.beneficiary,
-            proof_of_payout: response.data.data.proof_url,
-            proof_of_payout_url: response.data.data.proof_url
-          },
-          tracking: {
-            ...prev.data.tracking,
-            current_stage: 4
-          }
-        }
-      }));
+      // Refresh the tracking data to get updated stage information
+      const trackingResponse = await axiosInstance.get(`/my-benefits/${trackingModal.data.beneficiary.id}/track`);
+      setTrackingModal({
+        isOpen: true,
+        data: trackingResponse.data.data
+      });
 
       setSelectedFile(null);
       setProofComment('');
+      setReceiptNumber('');
       setError(null);
     } catch (err) {
-      console.error('Error uploading proof:', err);
-      setError(err.response?.data?.message || 'Failed to upload proof of payout');
+      console.error('Error validating receipt:', err);
+      if (err.response?.data?.message?.includes('Invalid receipt number')) {
+        setReceiptValidationError('Invalid Receipt Number. Please check the receipt sent to your email.');
+      } else {
+        setError(err.response?.data?.message || 'Failed to validate receipt number');
+      }
     } finally {
       setUploadLoading(false);
     }
@@ -153,12 +211,26 @@ const EnrolledPrograms = () => {
               </button>
               <button
                 onClick={handleBackToDashboard}
-                className="flex items-center gap-3 px-6 py-3 bg-white/80 backdrop-blur-sm hover:bg-white text-gray-700 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl border border-white/60 hover:-translate-y-1"
+                className="flex items-center gap-3 px-6 py-3 bg-white/80 backdrop-blur-sm hover:bg-white text-gray-700 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl border border-white/60 hover:-translate-y-1 mr-4"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0H9" />
                 </svg>
                 Dashboard
+              </button>
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative flex items-center gap-3 px-6 py-3 bg-white/80 backdrop-blur-sm hover:bg-white text-gray-700 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl border border-white/60 hover:-translate-y-1"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5 5v-5zM4.828 7l2.586 2.586a2 2 0 002.828 0L12 7H4.828zM4 12h16M4 16h16" />
+                </svg>
+                Notifications
+                {unreadCount > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-6 w-6 flex items-center justify-center font-bold">
+                    {unreadCount}
+                  </span>
+                )}
               </button>
             </div>
             <div className="inline-flex items-center gap-4 mb-4">
@@ -401,6 +473,103 @@ const EnrolledPrograms = () => {
         </div>
       </main>
 
+      {/* Notifications Panel */}
+      {showNotifications && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            {/* Notifications Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-8 py-6 rounded-t-3xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <span className="text-white text-xl">🔔</span>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-800">Notifications</h2>
+                    <p className="text-gray-600">{unreadCount} unread notifications</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllAsRead}
+                      className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg font-medium transition-colors"
+                    >
+                      Mark All Read
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowNotifications(false)}
+                    className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
+                  >
+                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Notifications Content */}
+            <div className="p-6">
+              {notifications.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-gray-400 text-3xl">🔔</span>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-2">No Notifications</h3>
+                  <p className="text-gray-600">You don't have any notifications yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {notifications.map((notification) => (
+                    <div
+                      key={notification.id}
+                      className={`p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer hover:shadow-md ${
+                        notification.is_read 
+                          ? 'bg-gray-50 border-gray-200' 
+                          : 'bg-blue-50 border-blue-200'
+                      }`}
+                      onClick={() => !notification.is_read && handleMarkNotificationAsRead(notification.id)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-3 h-3 rounded-full mt-2 ${
+                          notification.is_read ? 'bg-gray-300' : 'bg-blue-500'
+                        }`}></div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className={`font-semibold ${
+                              notification.is_read ? 'text-gray-700' : 'text-blue-800'
+                            }`}>
+                              {notification.title}
+                            </h4>
+                            <span className="text-xs text-gray-500">
+                              {new Date(notification.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className={`text-sm ${
+                            notification.is_read ? 'text-gray-600' : 'text-blue-700'
+                          }`}>
+                            {notification.message}
+                          </p>
+                          {notification.data?.formatted_date && (
+                            <div className="mt-2 p-2 bg-white rounded border">
+                              <p className="text-sm text-gray-600">
+                                <strong>New Payout Date:</strong> {notification.data.formatted_date}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Program Tracking Modal */}
       {trackingModal.isOpen && trackingModal.data && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -545,7 +714,7 @@ const EnrolledPrograms = () => {
                           )}
 
                           {/* Stage 3: Upload Proof of Payout */}
-                          {stage.stage === 3 && stage.active && (
+                          {stage.stage === 3 && stage.active && !trackingModal.data.beneficiary.receipt_number_validated && (
                             <div className={`mt-4 p-4 rounded-lg border-2 ${
                               trackingModal.data.beneficiary.is_paid 
                                 ? 'bg-green-50 border-green-300' 
@@ -556,23 +725,30 @@ const EnrolledPrograms = () => {
                                   ? 'text-green-800' 
                                   : 'text-gray-800'
                               }`}>
-                                Upload Proof of Payout
+                                Complete Program - Enter Receipt Number
                                 {trackingModal.data.beneficiary.is_paid && (
-                                  <span className="ml-2 text-green-600">✓ Ready to upload</span>
+                                  <span className="ml-2 text-green-600">✓ Ready to complete</span>
                                 )}
                               </h5>
                               <div className="space-y-4">
-                                {trackingModal.data.beneficiary.proof_of_payout_url ? (
+                                {trackingModal.data.beneficiary.receipt_number_validated ? (
                                   <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                                    <p className="text-green-800 font-medium mb-2">✓ Proof of payout uploaded</p>
-                                    <a 
-                                      href={trackingModal.data.beneficiary.proof_of_payout_url} 
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      className="text-blue-600 hover:text-blue-800 underline"
-                                    >
-                                      View uploaded proof
-                                    </a>
+                                    <p className="text-green-800 font-medium mb-2">✓ Receipt number validated successfully</p>
+                                    <p className="text-sm text-green-700">
+                                      <strong>Receipt Number:</strong> {trackingModal.data.beneficiary.receipt_number}
+                                    </p>
+                                    {trackingModal.data.beneficiary.proof_of_payout_url && (
+                                      <div className="mt-2">
+                                        <a 
+                                          href={trackingModal.data.beneficiary.proof_of_payout_url} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 hover:text-blue-800 underline"
+                                        >
+                                          View uploaded proof
+                                        </a>
+                                      </div>
+                                    )}
                                     {trackingModal.data.beneficiary.proof_comment && (
                                       <div className="mt-2 p-2 bg-white rounded border">
                                         <p className="text-sm text-gray-600">
@@ -582,43 +758,123 @@ const EnrolledPrograms = () => {
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="space-y-3">
+                                  <div className="space-y-4">
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                      <div className="flex items-start gap-3">
+                                        <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                          <span className="text-blue-600 text-sm">ℹ</span>
+                                        </div>
+                                        <div>
+                                          <h6 className="font-semibold text-blue-800 mb-1">How to complete this step:</h6>
+                                          <p className="text-sm text-blue-700 mb-2">
+                                            1. Check your email for the receipt sent after your benefit was marked as paid
+                                          </p>
+                                          <p className="text-sm text-blue-700 mb-2">
+                                            2. Find the receipt number (e.g., RCP-20250930-0008-535) in the email
+                                          </p>
+                                          <p className="text-sm text-blue-700">
+                                            3. Enter the receipt number below to complete the program
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
                                     <div>
                                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Comment about the proof of payout *
+                                        Receipt Number *
                                       </label>
-                                      <textarea
-                                        value={proofComment}
-                                        onChange={(e) => setProofComment(e.target.value)}
-                                        placeholder="Please describe the proof of payout (e.g., receipt number, transaction details, etc.)"
-                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                                        rows="3"
+                                      <input
+                                        type="text"
+                                        value={receiptNumber}
+                                        onChange={(e) => {
+                                          setReceiptNumber(e.target.value);
+                                          setReceiptValidationError('');
+                                        }}
+                                        placeholder="Enter your receipt number (e.g., RCP-20250930-0008-535)"
+                                        className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                          receiptValidationError ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                                        }`}
                                         required
                                       />
+                                      {receiptValidationError && (
+                                        <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                          </svg>
+                                          {receiptValidationError}
+                                        </p>
+                                      )}
                                     </div>
-                                    <input
-                                      type="file"
-                                      accept=".jpg,.jpeg,.png,.pdf"
-                                      onChange={handleFileSelect}
-                                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    />
-                                    <div className="text-xs text-gray-500">
-                                      Accepted formats: JPEG, PNG, PDF (Max 10MB)
+
+                                    <div className="border-t border-gray-200 pt-4">
+                                      <h6 className="text-sm font-medium text-gray-700 mb-3">Optional: Additional Proof</h6>
+                                      <div className="space-y-3">
+                                        <div>
+                                          <label className="block text-sm font-medium text-gray-600 mb-2">
+                                            Comment (optional)
+                                          </label>
+                                          <textarea
+                                            value={proofComment}
+                                            onChange={(e) => setProofComment(e.target.value)}
+                                            placeholder="Any additional comments about the payout..."
+                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                            rows="2"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-sm font-medium text-gray-600 mb-2">
+                                            Upload Proof File (optional)
+                                          </label>
+                                          <input
+                                            type="file"
+                                            accept=".jpg,.jpeg,.png,.pdf"
+                                            onChange={handleFileSelect}
+                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                          />
+                                          <div className="text-xs text-gray-500 mt-1">
+                                            Accepted formats: JPEG, PNG, PDF (Max 10MB)
+                                          </div>
+                                        </div>
+                                      </div>
                                     </div>
-                                    {selectedFile && proofComment.trim() && (
+
+                                    {receiptNumber.trim() && (
                                       <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                                        <span className="text-blue-800 font-medium">{selectedFile.name}</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-blue-800 font-medium">Ready to complete</span>
+                                          {selectedFile && (
+                                            <span className="text-blue-600 text-sm">+ {selectedFile.name}</span>
+                                          )}
+                                        </div>
                                         <button
                                           onClick={handleUploadProof}
                                           disabled={uploadLoading}
                                           className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-medium transition-colors"
                                         >
-                                          {uploadLoading ? 'Uploading...' : 'Upload Proof'}
+                                          {uploadLoading ? 'Validating...' : 'Complete Program'}
                                         </button>
                                       </div>
                                     )}
                                   </div>
                                 )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Receipt Validation Success Message */}
+                          {stage.stage === 3 && trackingModal.data.beneficiary.receipt_number_validated && (
+                            <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                  <span className="text-green-600 text-lg">✓</span>
+                                </div>
+                                <div>
+                                  <h5 className="text-green-800 font-semibold">Receipt Number Validated Successfully!</h5>
+                                  <p className="text-green-700 text-sm">
+                                    Your receipt number <strong>{trackingModal.data.beneficiary.receipt_number}</strong> has been validated. 
+                                    The program is now completed.
+                                  </p>
+                                </div>
                               </div>
                             </div>
                           )}

@@ -325,7 +325,11 @@ class BeneficiaryController extends Controller
                     'approved_date' => $beneficiary->approved_date,
                     'remarks' => $beneficiary->remarks,
                     'proof_of_payout' => $beneficiary->proof_of_payout,
-                    'proof_of_payout_url' => $beneficiary->proof_of_payout ? asset('storage/' . $beneficiary->proof_of_payout) : null
+                    'proof_of_payout_url' => $beneficiary->proof_of_payout ? asset('storage/' . $beneficiary->proof_of_payout) : null,
+                    'receipt_number' => $beneficiary->receipt_number,
+                    'receipt_number_validated' => $beneficiary->receipt_number_validated,
+                    'is_paid' => $beneficiary->is_paid,
+                    'proof_comment' => $beneficiary->proof_comment
                 ],
                 'program' => $beneficiary->program ? [
                     'id' => $beneficiary->program->id,
@@ -367,10 +371,10 @@ class BeneficiaryController extends Controller
                         ],
                         [
                             'stage' => 3,
-                            'title' => 'Upload Proof of Payout',
+                            'title' => 'Complete Program - Enter Receipt Number',
                             'description' => $beneficiary->is_paid 
-                                ? 'Upload proof after receiving payout (You have been marked as paid)'
-                                : 'Upload proof after receiving payout',
+                                ? 'Enter your receipt number to complete the program (You have been marked as paid)'
+                                : 'Enter your receipt number to complete the program',
                             'completed' => $trackingStage >= 3,
                             'active' => $trackingStage === 3
                         ],
@@ -458,23 +462,122 @@ class BeneficiaryController extends Controller
     }
 
     /**
+     * Validate receipt number and complete the program
+     */
+    public function validateReceipt(Request $request, $id)
+    {
+        $user = $request->user();
+        
+        // Find the resident record for the current user
+        $resident = \App\Models\Resident::where('user_id', $user->id)->first();
+        
+        if (!$resident) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resident profile not found'
+            ], 400);
+        }
+
+        // Get the beneficiary record
+        $beneficiary = Beneficiary::with(['program'])
+            ->where('id', $id)
+            ->where('visible_to_resident', true)
+            ->where(function($query) use ($resident) {
+                $firstName = trim($resident->first_name);
+                $lastName = trim($resident->last_name);
+                
+                $query->where(function($q) use ($firstName, $lastName) {
+                    $q->where('name', 'LIKE', '%' . $firstName . '%')
+                      ->where('name', 'LIKE', '%' . $lastName . '%');
+                });
+            })
+            ->first();
+
+        if (!$beneficiary) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Program not found or access denied'
+            ], 404);
+        }
+
+        // Validate the request
+        $request->validate([
+            'receipt_number' => 'required|string|max:255',
+            'proof_file' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240', // 10MB max
+            'comment' => 'nullable|string|max:1000'
+        ]);
+
+        // Check if the receipt number matches the beneficiary's receipt number
+        if ($beneficiary->receipt_number !== $request->receipt_number) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid receipt number. Please check the receipt sent to your email.'
+            ], 400);
+        }
+
+        // Check if the beneficiary is marked as paid
+        if (!$beneficiary->is_paid) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Benefit has not been marked as paid yet. Please wait for the admin to process your payment.'
+            ], 400);
+        }
+
+        // Handle optional file upload
+        $proofUrl = null;
+        if ($request->hasFile('proof_file')) {
+            // Delete old proof if exists
+            if ($beneficiary->proof_of_payout) {
+                Storage::delete($beneficiary->proof_of_payout);
+            }
+
+            // Store the new proof file
+            $file = $request->file('proof_file');
+            $path = $file->store('proof-of-payouts');
+            $proofUrl = asset('storage/' . $path);
+            
+            // Update the beneficiary record with file info
+            $beneficiary->proof_of_payout = $path;
+        }
+
+        // Update the beneficiary record
+        $beneficiary->receipt_number_validated = true;
+        $beneficiary->status = 'Completed';
+        if ($request->comment) {
+            $beneficiary->proof_comment = $request->comment;
+        }
+        $beneficiary->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Receipt number validated successfully! Program completed.',
+            'data' => [
+                'receipt_number' => $beneficiary->receipt_number,
+                'proof_url' => $proofUrl,
+                'status' => 'Completed'
+            ]
+        ]);
+    }
+
+    /**
      * Determine the current tracking stage based on beneficiary and submission status
      */
     private function determineTrackingStage($beneficiary, $submission, $program)
     {
+        // If receipt is validated or status is Completed, all stages are completed (Stage 4)
+        if ($beneficiary->receipt_number_validated || $beneficiary->status === 'Completed') {
+            return 4;
+        }
+        
         // Stage 1: Application approved
         if ($beneficiary->status === 'Approved' && $submission && $submission->status === 'approved') {
             // Stage 2: Waiting for payout (if not marked as paid yet)
             if (!$beneficiary->is_paid) {
                 return 2;
             }
-            // Stage 3: Marked as paid, need to upload proof
-            else if ($beneficiary->is_paid && !$beneficiary->proof_of_payout) {
+            // Stage 3: Marked as paid, need to validate receipt number
+            else if ($beneficiary->is_paid && !$beneficiary->receipt_number_validated) {
                 return 3;
-            }
-            // Stage 4: Proof uploaded, completed
-            else {
-                return 4;
             }
         }
         

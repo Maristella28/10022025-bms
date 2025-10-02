@@ -53,6 +53,8 @@ const SocialServices = () => {
   const [programFormError, setProgramFormError] = useState('');
   const [programFormLoading, setProgramFormLoading] = useState(false);
   const [programFormSuccess, setProgramFormSuccess] = useState('');
+  const [showNotificationSuccessModal, setShowNotificationSuccessModal] = useState(false);
+  const [notificationDetails, setNotificationDetails] = useState(null);
 
   // Analytics state
   const [chartData, setChartData] = useState([]);
@@ -1776,13 +1778,60 @@ const SocialServices = () => {
                           payout_date: programForm.payoutDate || null,
                         };
 
+                        // Check if payout date has changed for email notification
+                        let payoutDateChanged = false;
+                        let newPayoutDate = null;
+                        
                         if (editProgram && editProgram.id) {
+                          const originalPayoutDate = editProgram.payout_date || editProgram.payoutDate;
+                          newPayoutDate = programForm.payoutDate;
+                          payoutDateChanged = originalPayoutDate !== newPayoutDate;
+                          
+                          console.log('Payout Date Change Debug:', {
+                            originalPayoutDate,
+                            newPayoutDate,
+                            payoutDateChanged,
+                            hasNewPayoutDate: !!newPayoutDate
+                          });
+                          
                           await axios.put(`/admin/programs/${editProgram.id}`, data);
+                          
+                          // Send email notification if payout date changed
+                          if (payoutDateChanged && newPayoutDate) {
+                            console.log('Sending payout change notification...');
+                            try {
+                              const notificationResponse = await axios.post(`/api/admin/programs/${editProgram.id}/notify-payout-change`, {
+                                new_payout_date: newPayoutDate,
+                                program_name: programForm.name
+                              });
+                              console.log('Notification sent successfully:', notificationResponse.data);
+                              
+                              // Show success modal with notification details
+                              setNotificationDetails({
+                                emailsSent: notificationResponse.data.data.emails_sent,
+                                notificationsCreated: notificationResponse.data.data.notifications_created,
+                                totalBeneficiaries: notificationResponse.data.data.total_beneficiaries,
+                                programName: programForm.name,
+                                newPayoutDate: newPayoutDate
+                              });
+                              setShowNotificationSuccessModal(true);
+                            } catch (emailError) {
+                              console.error('Error sending payout change notification:', emailError);
+                              // Don't fail the entire operation if email fails
+                            }
+                          } else {
+                            console.log('No payout date change detected or no new payout date');
+                          }
                         } else {
                           await axios.post('/admin/programs', data);
                         }
                         
-                        setProgramFormSuccess(editProgram && editProgram.id ? 'Program updated successfully!' : 'Program added successfully!');
+                        const successMessage = editProgram && editProgram.id ? 'Program updated successfully!' : 'Program added successfully!';
+                        if (payoutDateChanged && newPayoutDate) {
+                          setProgramFormSuccess(successMessage + ' Email notifications sent to all beneficiaries.');
+                        } else {
+                          setProgramFormSuccess(successMessage);
+                        }
                         setShowProgramModal(false);
                         setProgramForm({ name: '', description: '', startDate: '', endDate: '', status: '', beneficiaryType: '', assistanceType: '', amount: '', maxBeneficiaries: '', payoutDate: '' });
                         
@@ -1900,6 +1949,101 @@ const SocialServices = () => {
           </div>
         )}
       </div>
+
+      {/* Notification Success Modal */}
+      {showNotificationSuccessModal && notificationDetails && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full transform transition-all duration-300 scale-100 opacity-100">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-8 py-6 rounded-t-3xl">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                  <span className="text-white text-2xl">📧</span>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Notifications Sent!</h2>
+                  <p className="text-green-100">Payout schedule updated successfully</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-8">
+              <div className="space-y-6">
+                {/* Program Info */}
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <h3 className="font-semibold text-gray-800 mb-2">Program Details</h3>
+                  <p className="text-gray-600"><strong>Program:</strong> {notificationDetails.programName}</p>
+                  <p className="text-gray-600"><strong>New Payout Date:</strong> {new Date(notificationDetails.newPayoutDate).toLocaleString()}</p>
+                </div>
+
+                {/* Notification Stats */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-blue-50 rounded-xl p-4 text-center">
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                      <span className="text-blue-600 text-xl">📧</span>
+                    </div>
+                    <p className="text-2xl font-bold text-blue-800">{notificationDetails.emailsSent}</p>
+                    <p className="text-sm text-blue-600">Emails Sent</p>
+                  </div>
+                  
+                  <div className="bg-purple-50 rounded-xl p-4 text-center">
+                    <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                      <span className="text-purple-600 text-xl">🔔</span>
+                    </div>
+                    <p className="text-2xl font-bold text-purple-800">{notificationDetails.notificationsCreated}</p>
+                    <p className="text-sm text-purple-600">In-App Notifications</p>
+                  </div>
+                </div>
+
+                {/* Total Beneficiaries */}
+                <div className="bg-green-50 rounded-xl p-4 text-center">
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <span className="text-green-600 text-xl">👥</span>
+                  </div>
+                  <p className="text-2xl font-bold text-green-800">{notificationDetails.totalBeneficiaries}</p>
+                  <p className="text-sm text-green-600">Total Beneficiaries Notified</p>
+                </div>
+
+                {/* Success Message */}
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                      <span className="text-green-600 text-lg">✅</span>
+                    </div>
+                    <div>
+                      <h4 className="text-green-800 font-semibold">All Notifications Delivered!</h4>
+                      <p className="text-green-700 text-sm">
+                        Beneficiaries have been notified via email and in-app notifications about the payout schedule change.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex justify-end gap-3 mt-8">
+                <button
+                  onClick={() => setShowNotificationSuccessModal(false)}
+                  className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setShowNotificationSuccessModal(false);
+                    // Optionally refresh the page or data
+                    window.location.reload();
+                  }}
+                  className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-medium transition-all duration-300 shadow-lg hover:shadow-xl"
+                >
+                  View Program Details
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 };

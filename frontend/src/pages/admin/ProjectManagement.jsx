@@ -39,6 +39,10 @@ const ProjectManagement = () => {
   const [photoPreview, setPhotoPreview] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // Additional fields for Project Records
+  const [newRemarks, setNewRemarks] = useState('');
+  const [newCompletedAt, setNewCompletedAt] = useState('');
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -51,6 +55,8 @@ const ProjectManagement = () => {
   const [selectedProject, setSelectedProject] = useState(null);
   const [showAllFeedbackProjectId, setShowAllFeedbackProjectId] = useState(null);
   const [reactionCounts, setReactionCounts] = useState({}); // { [projectId]: { like: 0, dislike: 0 } }
+  const [activeTab, setActiveTab] = useState('posted'); // 'posted' or 'records'
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   // Analytics and search state
   const [chartData, setChartData] = useState([]);
@@ -106,19 +112,30 @@ const ProjectManagement = () => {
     });
   };
 
-  // Filter projects based on search and status
+  // Filter projects based on search, status, and active tab
   useEffect(() => {
     let filtered = projects.filter((project) =>
       project.name.toLowerCase().includes(search.toLowerCase()) ||
       project.owner.toLowerCase().includes(search.toLowerCase())
     );
 
+    // Apply tab-based filtering
+    if (activeTab === 'posted') {
+      // Posted projects: published projects visible to residents
+      // Note: published field is stored as integer (1/0) in database, not boolean
+      filtered = filtered.filter(project => project.published == true || project.published === 1);
+    } else if (activeTab === 'records') {
+      // Project records: completed projects only
+      // Since we don't have created_by_admin/staff fields yet, we'll show completed projects
+      filtered = filtered.filter(project => project.status === 'Completed');
+    }
+
     if (selectedStatus !== 'All') {
       filtered = filtered.filter(project => project.status === selectedStatus);
     }
 
     setFilteredProjects(filtered);
-  }, [search, projects, selectedStatus]);
+  }, [search, projects, selectedStatus, activeTab]);
 
   // Update chart data when projects, period, year, or month changes
   useEffect(() => {
@@ -375,7 +392,7 @@ const ProjectManagement = () => {
         },
       });
 
-      setProjects([{...response.data, published: true}, ...projects]);
+      setProjects([{...response.data, published: true, created_by_admin: true}, ...projects]);
       setNewProjectName('');
       setNewOwner('');
       setNewDeadline('');
@@ -397,6 +414,11 @@ const ProjectManagement = () => {
     setNewStatus(project.status);
     setNewPhoto(null);
     setPhotoPreview(project.photo ? `http://localhost:8000/${project.photo}` : '');
+    
+    // Set additional fields for Project Records
+    setNewRemarks(project.remarks || '');
+    setNewCompletedAt(project.completed_at ? new Date(project.completed_at).toISOString().slice(0, 16) : '');
+    
     setShowEditForm(true);
     setShowAddForm(false);
   };
@@ -412,6 +434,12 @@ const ProjectManagement = () => {
       formData.append('status', newStatus);
       formData.append('_method', 'PUT'); // For Laravel to handle PUT request
       
+      // Add additional fields for Project Records
+      formData.append('remarks', newRemarks);
+      if (newCompletedAt) {
+        formData.append('completed_at', newCompletedAt);
+      }
+      
       if (newPhoto) {
         formData.append('photo', newPhoto);
       }
@@ -423,7 +451,7 @@ const ProjectManagement = () => {
       });
 
       setProjects(projects.map(project => 
-        project.id === editingProject.id ? response.data : project
+        project.id === editingProject.id ? {...response.data, created_by_admin: project.created_by_admin, created_by_staff: project.created_by_staff} : project
       ));
       
       // Reset form
@@ -450,6 +478,10 @@ const ProjectManagement = () => {
     setNewStatus('Planned');
     setNewPhoto(null);
     setPhotoPreview('');
+    
+    // Reset additional fields
+    setNewRemarks('');
+    setNewCompletedAt('');
   };
 
   const handlePhotoChange = (e) => {
@@ -487,6 +519,245 @@ const ProjectManagement = () => {
 
   const handleRefreshFeedbacks = async () => {
     await fetchFeedbacks();
+  };
+
+  const handleDownloadProjectRecordsPDF = async () => {
+    if (activeTab !== 'records') return;
+    
+    setIsGeneratingPDF(true);
+    try {
+      // Get filtered projects for records tab
+      const recordProjects = projects.filter(project => project.status === 'Completed');
+      
+      // Create PDF content
+      const pdfContent = generateProjectRecordsPDF(recordProjects);
+      
+      // Create and download PDF
+      const element = document.createElement('a');
+      const file = new Blob([pdfContent], { type: 'text/html' });
+      element.href = URL.createObjectURL(file);
+      element.download = `Project_Records_${new Date().toISOString().split('T')[0]}.html`;
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+      
+      setToastMessage({
+        type: 'success',
+        message: '📄 Project Records PDF generated successfully!',
+        duration: 3000
+      });
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      setToastMessage({
+        type: 'error',
+        message: '❌ Failed to generate PDF',
+        duration: 4000
+      });
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  const generateProjectRecordsPDF = (projects) => {
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    
+    const completedCount = projects.length;
+    const totalValue = projects.reduce((sum, project) => sum + (project.estimated_cost || 0), 0);
+    
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Records Report</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .header {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        .summary {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+        .summary h2 {
+            color: #059669;
+            margin-bottom: 20px;
+            font-size: 22px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border-left: 4px solid #10b981;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #10b981;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 5px;
+        }
+        .projects-table {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .table-header {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            padding: 20px;
+        }
+        .table-header h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            background-color: #f3f4f6;
+            font-weight: bold;
+            color: #374151;
+        }
+        tr:hover {
+            background-color: #f9fafb;
+        }
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status-completed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .no-projects {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📋 Project Records Report</h1>
+        <p>Generated on ${currentDate}</p>
+    </div>
+
+    <div class="summary">
+        <h2>📊 Summary</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">${completedCount}</div>
+                <div class="stat-label">Completed Projects</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${projects.length > 0 ? Math.round(100) : 0}%</div>
+                <div class="stat-label">Success Rate</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">₱${totalValue.toLocaleString()}</div>
+                <div class="stat-label">Total Value</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="projects-table">
+        <div class="table-header">
+            <h2>📁 Completed Project Records</h2>
+        </div>
+        ${projects.length > 0 ? `
+        <table>
+            <thead>
+                <tr>
+                    <th>Project Name</th>
+                    <th>Owner/Team</th>
+                    <th>Completion Date</th>
+                    <th>Status</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${projects.map(project => `
+                    <tr>
+                        <td><strong>${project.name}</strong></td>
+                        <td>${project.owner}</td>
+                        <td>${project.updated_at ? new Date(project.updated_at).toLocaleDateString() : 'N/A'}</td>
+                        <td><span class="status-badge status-completed">${project.status}</span></td>
+                        <td>${project.description || 'No description available'}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        ` : `
+        <div class="no-projects">
+            <h3>No completed projects found</h3>
+            <p>There are currently no completed projects to display in the records.</p>
+        </div>
+        `}
+    </div>
+
+    <div class="footer">
+        <p>This report was generated automatically by the Barangay Management System</p>
+        <p>For questions or concerns, please contact the Barangay Administration Office</p>
+    </div>
+</body>
+</html>
+    `;
   };
 
   const getStatusColor = (status) => {
@@ -578,8 +849,11 @@ const ProjectManagement = () => {
               <div className="bg-gradient-to-r from-blue-100 to-purple-100 text-blue-800 px-6 py-2 rounded-full text-sm font-medium border border-blue-200">
                 {projects.length} Total Projects
               </div>
+              <div className="bg-gradient-to-r from-indigo-100 to-blue-100 text-indigo-800 px-6 py-2 rounded-full text-sm font-medium border border-indigo-200">
+                {projects.filter(p => p.published == true || p.published === 1).length} Posted
+              </div>
               <div className="bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 px-6 py-2 rounded-full text-sm font-medium border border-green-200">
-                {projects.filter(p => p.status === 'Completed').length} Completed
+                {projects.filter(p => p.status === 'Completed').length} Records
               </div>
             </div>
           </div>
@@ -592,6 +866,38 @@ const ProjectManagement = () => {
               <span className="text-lg font-semibold">{error}</span>
             </div>
           )}
+
+          {/* Tab Navigation */}
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 mb-8">
+            <div className="flex space-x-1 bg-gray-100 rounded-xl p-1">
+              <button
+                onClick={() => setActiveTab('posted')}
+                className={`flex-1 py-3 px-6 rounded-lg font-semibold text-sm transition-all duration-300 ${
+                  activeTab === 'posted'
+                    ? 'bg-white text-blue-600 shadow-md'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <PhotoIcon className="w-5 h-5" />
+                  Posted Projects ({projects.filter(p => p.published == true || p.published === 1).length})
+                </div>
+              </button>
+              <button
+                onClick={() => setActiveTab('records')}
+                className={`flex-1 py-3 px-6 rounded-lg font-semibold text-sm transition-all duration-300 ${
+                  activeTab === 'records'
+                    ? 'bg-white text-green-600 shadow-md'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <DocumentTextIcon className="w-5 h-5" />
+                  Project Records ({projects.filter(p => p.status === 'Completed').length})
+                </div>
+              </button>
+            </div>
+          </div>
 
           {/* Enhanced Stats Cards with Hover Effects */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -610,13 +916,13 @@ const ProjectManagement = () => {
             <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2 group">
               <div className="flex justify-between items-center">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 mb-2">Planned</p>
+                  <p className="text-sm font-medium text-gray-600 mb-2">Posted Projects</p>
                   <p className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent group-hover:from-indigo-600 group-hover:to-blue-600 transition-all duration-300">
-                    {projects.filter(p => p.status === 'Planned').length}
+                    {projects.filter(p => p.published == true || p.published === 1).length}
                   </p>
                 </div>
                 <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all duration-300">
-                  <ClockIcon className="w-8 h-8 text-blue-600" />
+                  <PhotoIcon className="w-8 h-8 text-blue-600" />
                 </div>
               </div>
             </div>
@@ -624,13 +930,13 @@ const ProjectManagement = () => {
             <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2 group">
               <div className="flex justify-between items-center">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 mb-2">In Progress</p>
-                  <p className="text-4xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 bg-clip-text text-transparent group-hover:from-orange-600 group-hover:to-yellow-600 transition-all duration-300">
-                    {projects.filter(p => p.status === 'In Progress').length}
+                  <p className="text-sm font-medium text-gray-600 mb-2">Project Records</p>
+                  <p className="text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent group-hover:from-emerald-600 group-hover:to-green-600 transition-all duration-300">
+                    {projects.filter(p => p.status === 'Completed').length}
                   </p>
                 </div>
-                <div className="w-16 h-16 bg-gradient-to-br from-yellow-100 to-orange-100 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all duration-300">
-                  <RocketLaunchIcon className="w-8 h-8 text-yellow-600" />
+                <div className="w-16 h-16 bg-gradient-to-br from-green-100 to-emerald-100 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all duration-300">
+                  <TrophyIcon className="w-8 h-8 text-green-600" />
                 </div>
               </div>
             </div>
@@ -639,12 +945,12 @@ const ProjectManagement = () => {
               <div className="flex justify-between items-center">
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-2">Completed</p>
-                  <p className="text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent group-hover:from-emerald-600 group-hover:to-green-600 transition-all duration-300">
+                  <p className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent group-hover:from-pink-600 group-hover:to-purple-600 transition-all duration-300">
                     {projects.filter(p => p.status === 'Completed').length}
                   </p>
                 </div>
-                <div className="w-16 h-16 bg-gradient-to-br from-green-100 to-emerald-100 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all duration-300">
-                  <TrophyIcon className="w-8 h-8 text-green-600" />
+                <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-pink-100 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-all duration-300">
+                  <CheckCircleIcon className="w-8 h-8 text-purple-600" />
                 </div>
               </div>
             </div>
@@ -1001,6 +1307,63 @@ const ProjectManagement = () => {
                 </div>
               </div>
               
+              {/* Additional Fields for Project Records - Only show when editing */}
+              {activeTab === 'records' && (
+                <div className="mb-8 p-6 bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl border border-green-200">
+                  <h3 className="text-lg font-bold text-green-800 mb-4 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Record Keeping Details
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-gray-700">
+                        Date & Time Completed
+                        <span className="text-red-500 ml-1">*</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={newCompletedAt}
+                        onChange={(e) => setNewCompletedAt(e.target.value)}
+                        className="w-full border-2 border-gray-200 rounded-xl px-4 py-4 focus:outline-none focus:ring-4 focus:ring-green-100 focus:border-green-500 transition-all duration-300"
+                        placeholder="Select completion date and time"
+                      />
+                      <p className="text-xs text-gray-500">When was this project officially completed?</p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-gray-700">
+                        Completion Remarks
+                      </label>
+                      <input
+                        type="text"
+                        value={newRemarks}
+                        onChange={(e) => setNewRemarks(e.target.value)}
+                        className="w-full border-2 border-gray-200 rounded-xl px-4 py-4 focus:outline-none focus:ring-4 focus:ring-green-100 focus:border-green-500 transition-all duration-300"
+                        placeholder="Enter completion notes or remarks"
+                      />
+                      <p className="text-xs text-gray-500">Additional notes about project completion</p>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
+                    <div className="flex items-start gap-3">
+                      <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div>
+                        <h4 className="text-sm font-semibold text-blue-800">Record Keeping Guidelines</h4>
+                        <p className="text-xs text-blue-700 mt-1">
+                          These fields are specifically for administrative record keeping and will help maintain accurate project completion records.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {/* Enhanced Photo Upload Section */}
               <div className="mb-8">
                 <label className="block text-sm font-semibold text-gray-700 mb-4">Project Photo</label>
@@ -1044,11 +1407,62 @@ const ProjectManagement = () => {
 
           {/* Enhanced Projects Table */}
           <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 px-8 py-6">
-              <h3 className="text-white font-bold text-xl flex items-center gap-3">
-                <ChartBarIcon className="w-6 h-6" />
-                Project Records ({filteredProjects.length})
-              </h3>
+            <div className={`px-8 py-6 ${
+              activeTab === 'posted' 
+                ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600' 
+                : 'bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600'
+            }`}>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-white font-bold text-xl flex items-center gap-3">
+                    {activeTab === 'posted' ? (
+                      <>
+                        <PhotoIcon className="w-6 h-6" />
+                        Posted Projects ({filteredProjects.length})
+                      </>
+                    ) : (
+                      <>
+                        <DocumentTextIcon className="w-6 h-6" />
+                        Project Records ({filteredProjects.length})
+                      </>
+                    )}
+                  </h3>
+                  <p className="text-white/80 text-sm mt-1">
+                    {activeTab === 'posted' 
+                      ? 'Projects published and visible to residents'
+                      : 'Completed projects and admin/staff created projects'
+                    }
+                  </p>
+                </div>
+                
+                {/* PDF Download Button - Only show for Project Records tab */}
+                {activeTab === 'records' && (
+                  <button
+                    onClick={handleDownloadProjectRecordsPDF}
+                    disabled={isGeneratingPDF || filteredProjects.length === 0}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 transform hover:scale-105 ${
+                      isGeneratingPDF || filteredProjects.length === 0
+                        ? 'bg-white/20 text-white/50 cursor-not-allowed'
+                        : 'bg-white/20 hover:bg-white/30 text-white hover:shadow-lg'
+                    }`}
+                    title={filteredProjects.length === 0 ? 'No completed projects to download' : 'Download Project Records as PDF'}
+                  >
+                    {isGeneratingPDF ? (
+                      <>
+                        <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Download PDF
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -1059,6 +1473,12 @@ const ProjectManagement = () => {
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Owner</th>
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Deadline</th>
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Status</th>
+                    {activeTab === 'records' && (
+                      <>
+                        <th className="px-6 py-6 text-left font-bold text-gray-700">Completed At</th>
+                        <th className="px-6 py-6 text-left font-bold text-gray-700">Remarks</th>
+                      </>
+                    )}
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Reactions</th>
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Feedback</th>
                     <th className="px-6 py-6 text-left font-bold text-gray-700">Actions</th>
@@ -1068,7 +1488,7 @@ const ProjectManagement = () => {
                 <tbody className="divide-y divide-gray-100">
                   {loading ? (
                     <tr>
-                      <td colSpan="7" className="px-8 py-16 text-center">
+                      <td colSpan={activeTab === 'records' ? "9" : "7"} className="px-8 py-16 text-center">
                         <div className="flex flex-col items-center gap-4">
                           <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                           <p className="text-gray-600 font-semibold text-lg">Loading projects...</p>
@@ -1078,13 +1498,13 @@ const ProjectManagement = () => {
                     </tr>
                   ) : filteredProjects.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="px-8 py-16 text-center">
+                      <td colSpan={activeTab === 'records' ? "9" : "7"} className="px-8 py-16 text-center">
                         <div className="flex flex-col items-center gap-4">
                           <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center">
                             <DocumentTextIcon className="w-10 h-10 text-gray-400" />
                           </div>
-                          <p className="text-gray-600 font-semibold text-lg">No projects found</p>
-                          <p className="text-gray-400">Try adjusting your search</p>
+                          <p className="text-gray-600 font-semibold text-lg">No {activeTab === 'posted' ? 'posted projects' : 'project records'} found</p>
+                          <p className="text-gray-400">Try adjusting your search or filters</p>
                         </div>
                       </td>
                     </tr>
@@ -1128,6 +1548,31 @@ const ProjectManagement = () => {
                               {project.status}
                             </span>
                           </td>
+                          
+                          {/* Additional columns for Project Records */}
+                          {activeTab === 'records' && (
+                            <>
+                              <td className="px-6 py-6">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 bg-gradient-to-br from-green-100 to-emerald-100 rounded-full flex items-center justify-center">
+                                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                  </div>
+                                  <span className="bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 px-3 py-2 rounded-full text-sm font-medium shadow-sm">
+                                    {project.completed_at ? new Date(project.completed_at).toLocaleString() : 'Not set'}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-6">
+                                <div className="max-w-xs">
+                                  <span className="text-gray-700 text-sm">
+                                    {project.remarks || 'No remarks'}
+                                  </span>
+                                </div>
+                              </td>
+                            </>
+                          )}
                           <td className="px-6 py-6">
                             <div className="flex items-center gap-3">
                               <div className="flex items-center gap-1 bg-gradient-to-r from-blue-100 to-indigo-100 px-3 py-2 rounded-full border border-blue-200">
@@ -1255,6 +1700,18 @@ const ProjectManagement = () => {
                                 <PencilIcon className="w-4 h-4" />
                                 Edit
                               </button>
+                              {activeTab === 'records' && (
+                                <button
+                                  onClick={() => handleDownloadProjectRecordsPDF()}
+                                  className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-emerald-500 hover:to-green-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg flex items-center gap-2 transition-all duration-300 transform hover:scale-105"
+                                  title="Download Project Record as PDF"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  PDF
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleDelete(project.id)}
                                 className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg flex items-center gap-2 transition-all duration-300 transform hover:scale-105"

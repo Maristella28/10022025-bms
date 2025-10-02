@@ -31,11 +31,13 @@ class Beneficiary extends Model
         'proof_comment',
         'receipt_path',
         'receipt_number',
+        'receipt_number_validated',
     ];
 
     protected $casts = [
         'is_paid' => 'boolean',
         'paid_at' => 'datetime',
+        'receipt_number_validated' => 'boolean',
     ];
 
     public function disbursements()

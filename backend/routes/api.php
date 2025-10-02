@@ -273,6 +273,7 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
 
         // 🎯 Programs Management (Admin only)
         Route::apiResource('programs', App\Http\Controllers\ProgramController::class);
+        Route::post('/programs/{id}/notify-payout-change', [App\Http\Controllers\ProgramController::class, 'notifyPayoutChange']);
         
         // Program Application Forms (Admin only)
         Route::apiResource('program-application-forms', App\Http\Controllers\ProgramApplicationFormController::class);
@@ -347,10 +348,11 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
         Route::middleware('mybenefits.allowed')->get('/my-benefits', [BeneficiaryController::class, 'getMyBenefits']);
         Route::middleware('mybenefits.allowed')->get('/my-benefits/{id}/track', [BeneficiaryController::class, 'getProgramTracking']);
         Route::middleware('mybenefits.allowed')->post('/my-benefits/{id}/upload-proof', [BeneficiaryController::class, 'uploadProofOfPayout']);
+        Route::middleware('mybenefits.allowed')->post('/my-benefits/{id}/validate-receipt', [BeneficiaryController::class, 'validateReceipt']);
     });
 
-    // 🔔 Notifications
-    Route::get('/notifications', function (Request $request) {
+    // 🔔 Legacy Notifications (keeping for compatibility)
+    Route::get('/legacy-notifications', function (Request $request) {
         // Return notifications for the authenticated user
         $user = $request->user();
         $notifications = $user->notifications ?? collect();
@@ -358,7 +360,7 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
             'notifications' => $notifications
         ]);
     });
-    Route::patch('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+    Route::patch('/legacy-notifications/{id}/read', [NotificationController::class, 'markAsRead']);
 
     // Assets
     Route::get('/assets', [AssetController::class, 'index']);
@@ -490,10 +492,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/programs/residents', [App\Http\Controllers\ProgramController::class, 'getForResidents']);
     Route::get('/programs/{id}', [App\Http\Controllers\ProgramController::class, 'show']);
     
+    // Resident Notifications
+    Route::get('/notifications', [App\Http\Controllers\ResidentNotificationController::class, 'index']);
+    Route::post('/notifications/{id}/read', [App\Http\Controllers\ResidentNotificationController::class, 'markAsRead']);
+    Route::post('/notifications/read-all', [App\Http\Controllers\ResidentNotificationController::class, 'markAllAsRead']);
+    
     // Beneficiaries (for residents)
     Route::get('/my-benefits', [App\Http\Controllers\BeneficiaryController::class, 'getMyBenefits']);
     Route::get('/my-benefits/{id}/track', [App\Http\Controllers\BeneficiaryController::class, 'getProgramTracking']);
     Route::post('/my-benefits/{id}/upload-proof', [App\Http\Controllers\BeneficiaryController::class, 'uploadProofOfPayout']);
+    Route::post('/my-benefits/{id}/validate-receipt', [App\Http\Controllers\BeneficiaryController::class, 'validateReceipt']);
 });
 
 // ✅ **New Backend Structure for Disaster/Emergency Records**

@@ -274,7 +274,14 @@ const ProgramDetails = () => {
             debug_info: response.data?.meta?.debug_info
           });
           
-          setQualifiedResidents(qualified);
+          // Filter out residents who are already beneficiaries in this program
+          const existingBeneficiaryNames = beneficiaries.map(b => b.name.toLowerCase().trim());
+          const availableQualified = qualified.filter(resident => {
+            const fullName = `${resident.first_name} ${resident.last_name}`.toLowerCase().trim();
+            return !existingBeneficiaryNames.includes(fullName);
+          });
+          
+          setQualifiedResidents(availableQualified);
           setQualificationDebugInfo(response.data?.meta?.debug_info);
         } catch (error) {
           console.error('Error loading qualified residents:', error);
@@ -286,7 +293,7 @@ const ProgramDetails = () => {
     };
     
     loadQualifiedResidents();
-  }, [showModal, id]);
+  }, [showModal, id, beneficiaries]);
 
 
 
@@ -1763,13 +1770,14 @@ const ProgramDetails = () => {
                 <th className="px-4 py-3 text-left font-semibold text-gray-700">Assistance</th>
                 <th className="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
                 <th className="px-4 py-3 text-left font-semibold text-gray-700">Amount</th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-700">Receipt #</th>
                 <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {beneficiaries.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-8 text-center text-gray-400">
+                  <td colSpan="8" className="px-6 py-8 text-center text-gray-400">
                     No beneficiaries for this program.
                   </td>
                 </tr>
@@ -1794,6 +1802,7 @@ const ProgramDetails = () => {
                       <div className="flex items-center gap-2">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           beneficiary.status === 'Approved' ? 'bg-green-100 text-green-800' :
+                          beneficiary.status === 'Completed' ? 'bg-green-100 text-green-800' :
                           beneficiary.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
                           beneficiary.status === 'Processing' ? 'bg-blue-100 text-blue-800' :
                           'bg-red-100 text-red-800'
@@ -1809,6 +1818,17 @@ const ProgramDetails = () => {
                     </td>
                     <td className="px-4 py-3 text-green-700 font-semibold">
                       ₱ {beneficiary.amount?.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {beneficiary.receipt_number ? (
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                            {beneficiary.receipt_number}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">-</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {/* Admin Controls */}
@@ -1899,6 +1919,17 @@ const ProgramDetails = () => {
                     setFormSuccess('');
                     setFormLoading(true);
                     try {
+                      // Check if beneficiary already exists in this program
+                      const existingBeneficiary = beneficiaries.find(b => 
+                        b.name.toLowerCase().trim() === form.name.toLowerCase().trim()
+                      );
+                      
+                      if (existingBeneficiary) {
+                        setFormError('This resident is already a beneficiary in this program.');
+                        setFormLoading(false);
+                        return;
+                      }
+
                       const response = await axiosInstance.post('/admin/beneficiaries', {
                         name: form.name,
                         beneficiary_type: form.beneficiaryType,
@@ -1950,7 +1981,12 @@ const ProgramDetails = () => {
                         <div className="text-xs text-green-600">Loading qualified residents...</div>
                       ) : (
                         <div className="text-xs text-green-600">
-                          Found {qualifiedResidents.length} qualified resident{qualifiedResidents.length !== 1 ? 's' : ''}
+                          Found {qualifiedResidents.length} available qualified resident{qualifiedResidents.length !== 1 ? 's' : ''}
+                          {beneficiaries.length > 0 && (
+                            <span className="text-gray-500 ml-2">
+                              ({beneficiaries.length} already added to this program)
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -2000,10 +2036,15 @@ const ProgramDetails = () => {
                           <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
                           </svg>
-                          <span className="text-sm text-yellow-800 font-medium">No Qualified Residents</span>
+                          <span className="text-sm text-yellow-800 font-medium">
+                            {beneficiaries.length > 0 ? 'All Qualified Residents Already Added' : 'No Qualified Residents'}
+                          </span>
                         </div>
                         <p className="text-xs text-yellow-700 mt-1">
-                          No residents have approved submissions for all published forms of this program yet.
+                          {beneficiaries.length > 0 
+                            ? 'All residents with approved submissions for all published forms have already been added to this program.'
+                            : 'No residents have approved submissions for all published forms of this program yet.'
+                          }
                         </p>
                         
                         {qualificationDebugInfo && (
