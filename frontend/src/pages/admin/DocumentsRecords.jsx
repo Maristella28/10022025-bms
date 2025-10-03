@@ -29,6 +29,7 @@ import {
   ArrowPathIcon,
   ClockIcon as RefreshIcon,
   ArrowDownTrayIcon,
+  CurrencyDollarIcon,
 } from "@heroicons/react/24/solid";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useTestData, getTestDocumentRecords } from '../../testData/documentRecordsTestData';
@@ -136,11 +137,15 @@ const DocumentsRecords = () => {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [chartData, setChartData] = useState([]);
+  const [confirmingPayment, setConfirmingPayment] = useState(null);
 
   const currentYear = new Date().getFullYear();
   const [selectedPeriod, setSelectedPeriod] = useState('all');
   const [selectedYear, setSelectedYear] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(0); // 0 means no month selected
+  const [activeTab, setActiveTab] = useState('requests'); // 'requests' or 'records'
+  const [selectedDocumentType, setSelectedDocumentType] = useState('all');
+  const [activeDocumentType, setActiveDocumentType] = useState('all'); // For document type tabs
 
   // Fetch document requests from backend
   const fetchRecords = async (showRefreshIndicator = false) => {
@@ -189,6 +194,13 @@ const DocumentsRecords = () => {
           photoPath: item.photo_path,
           photoType: item.photo_type,
           photoMetadata: item.photo_metadata,
+          paymentAmount: item.payment_amount,
+          paymentStatus: item.payment_status,
+          paymentNotes: item.payment_notes,
+          paymentApprovedAt: item.payment_approved_at,
+          paymentConfirmedAt: item.payment_confirmed_at,
+          paymentApprovedBy: item.payment_approved_by,
+          paymentConfirmedBy: item.payment_confirmed_by,
         }));
         setRecords(mapped);
         setFilteredRecords(mapped);
@@ -263,20 +275,119 @@ const DocumentsRecords = () => {
     });
   };
 
-  // Filter records on search
+  // Handle tab change
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setActiveDocumentType('all'); // Reset document type filter when switching tabs
+  };
+
+  // Send notification to resident about approval
+  const sendApprovalNotification = async (documentRequest) => {
+    try {
+      // This would typically call a notification API
+      console.log('Sending approval notification to resident:', {
+        residentId: documentRequest.user?.id,
+        documentType: documentRequest.documentType,
+        paymentAmount: documentRequest.paymentAmount,
+        status: 'approved'
+      });
+      
+      // In a real implementation, you would call:
+      // await axiosInstance.post('/notifications', {
+      //   user_id: documentRequest.user?.id,
+      //   type: 'document_approval',
+      //   title: 'Document Request Approved',
+      //   message: `Your ${documentRequest.documentType} request has been approved. Payment required: ₱${documentRequest.paymentAmount}`,
+      //   data: {
+      //     document_request_id: documentRequest.id,
+      //     payment_amount: documentRequest.paymentAmount
+      //   }
+      // });
+    } catch (error) {
+      console.error('Failed to send approval notification:', error);
+    }
+  };
+
+  // Admin confirms payment for a document request
+  const handleConfirmPayment = async (record) => {
+    setConfirmingPayment(record.id);
+    setToastMessage({
+      type: 'loading',
+      message: 'Confirming payment...',
+      duration: 0
+    });
+    
+    try {
+      console.log('Confirming payment for record:', {
+        id: record.id,
+        status: record.status,
+        paymentAmount: record.paymentAmount,
+        paymentStatus: record.paymentStatus,
+        documentType: record.documentType
+      });
+      
+      const response = await axiosInstance.post(`/document-requests/${record.id}/admin-confirm-payment`);
+      
+      console.log('Payment confirmation response:', response.data);
+      
+      setToastMessage({
+        type: 'success',
+        message: `✅ Payment confirmed! ${record.documentType} has been moved to Document Records.`,
+        duration: 4000
+      });
+      
+      // Refresh records to update the UI
+      await fetchRecords();
+      
+    } catch (err) {
+      console.error('Error confirming payment:', err);
+      console.error('Error details:', {
+        status: err.response?.status,
+        data: err.response?.data,
+        message: err.message
+      });
+      
+      const errorMessage = err.response?.data?.message || 'Failed to confirm payment.';
+      
+      setToastMessage({
+        type: 'error',
+        message: `❌ ${errorMessage}`,
+        duration: 4000
+      });
+    } finally {
+      setConfirmingPayment(null);
+    }
+  };
+
+  // Filter records based on active tab, search, and document type
   useEffect(() => {
-    setFilteredRecords(
-      records.filter((record) => {
-        const name = record.user?.name || record.resident?.first_name + ' ' + record.resident?.last_name || '';
-        const id = record.resident?.resident_id || record.user?.id ? `RES-${String(record.user?.id || record.resident?.id).padStart(3, '0')}` : '';
-        return (
-          name.toLowerCase().includes(search.toLowerCase()) ||
-          id.toLowerCase().includes(search.toLowerCase()) ||
-          record.documentType.toLowerCase().includes(search.toLowerCase())
-        );
-      })
-    );
-  }, [search, records]);
+    let filtered = records.filter((record) => {
+      const name = record.user?.name || record.resident?.first_name + ' ' + record.resident?.last_name || '';
+      const id = record.resident?.resident_id || record.user?.id ? `RES-${String(record.user?.id || record.resident?.id).padStart(3, '0')}` : '';
+      
+      // Search filter
+      const matchesSearch = name.toLowerCase().includes(search.toLowerCase()) ||
+        id.toLowerCase().includes(search.toLowerCase()) ||
+        record.documentType.toLowerCase().includes(search.toLowerCase());
+      
+      // Document type filter
+      const matchesDocumentType = activeDocumentType === 'all' || record.documentType === activeDocumentType;
+      
+      // Tab-based filtering
+      let matchesTab = true;
+      if (activeTab === 'requests') {
+        // Show all requests (pending, approved, rejected) that are not paid
+        matchesTab = record.paymentStatus !== 'paid';
+      } else if (activeTab === 'records') {
+        // Show only paid and approved requests (finalized records)
+        matchesTab = record.paymentStatus === 'paid' && record.status === 'Approved';
+      }
+      
+      return matchesSearch && matchesDocumentType && matchesTab;
+    });
+    
+    setFilteredRecords(filtered);
+  }, [search, records, activeTab, activeDocumentType]);
 
   // Update chart data when records, period, year, or month changes
   useEffect(() => {
@@ -301,11 +412,24 @@ const DocumentsRecords = () => {
     setLoading(true);
     setFeedback({ type: 'loading', message: 'Saving changes...' });
     
+    // Validate payment amount when approving
+    if (editData.status.toLowerCase() === 'approved' && (!editData.paymentAmount || editData.paymentAmount <= 0)) {
+      setFeedback({
+        type: 'error',
+        message: '❌ Payment amount is required when approving a document request.',
+        details: 'Please enter a valid payment amount before approving.'
+      });
+      setLoading(false);
+      return;
+    }
+    
     try {
       await axiosInstance.patch(`/document-requests/${editData.id}`, {
         status: editData.status.toLowerCase(),
         priority: editData.priority,
         estimated_completion: editData.estimatedCompletion,
+        payment_amount: editData.paymentAmount || 0,
+        payment_notes: editData.paymentNotes || '',
         fields: {
           purpose: editData.purpose,
           remarks: editData.remarks,
@@ -314,8 +438,12 @@ const DocumentsRecords = () => {
       
       setFeedback({
         type: 'success',
-        message: '✅ Document record updated successfully!',
-        details: `Status changed to ${editData.status}. All changes have been saved.`
+        message: editData.status.toLowerCase() === 'approved' 
+          ? '✅ Document approved successfully! Payment notification sent to resident.'
+          : '✅ Document record updated successfully!',
+        details: editData.status.toLowerCase() === 'approved' 
+          ? `Document approved with payment amount ₱${editData.paymentAmount}. Resident has been notified and can now make payment.`
+          : `Status changed to ${editData.status}. All changes have been saved.`
       });
       
       // Show toast notification
@@ -324,6 +452,11 @@ const DocumentsRecords = () => {
         message: `Document #${editData.id} updated successfully`,
         duration: 3000
       });
+      
+      // Send notification if approved
+      if (editData.status.toLowerCase() === 'approved' && editData.paymentAmount > 0) {
+        await sendApprovalNotification(editData);
+      }
       
       setTimeout(() => {
         setShowModal(false);
@@ -364,6 +497,20 @@ const DocumentsRecords = () => {
 
   const getStatusCount = (status) => {
     return records.filter(record => record.status === status).length;
+  };
+
+  const getDocumentTypeCount = (documentType) => {
+    if (activeTab === 'requests') {
+      return records.filter(record => 
+        record.documentType === documentType && record.paymentStatus !== 'paid'
+      ).length;
+    } else {
+      return records.filter(record => 
+        record.documentType === documentType && 
+        record.paymentStatus === 'paid' && 
+        record.status === 'Approved'
+      ).length;
+    }
   };
 
   const handleGeneratePdf = async (record) => {
@@ -976,21 +1123,31 @@ const DocumentsRecords = () => {
             </div>
           </div>
 
-          {/* Enhanced Search and Add Section */}
+          {/* Tab Navigation */}
           <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 mb-8">
             <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
               <div className="flex gap-3">
-                <button className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-8 py-3 rounded-xl shadow-lg flex items-center gap-3 text-sm font-semibold transition-all duration-300 transform hover:scale-105">
+                <button 
+                  onClick={() => handleTabChange('requests')}
+                  className={`px-8 py-3 rounded-xl shadow-lg flex items-center gap-3 text-sm font-semibold transition-all duration-300 transform hover:scale-105 ${
+                    activeTab === 'requests'
+                      ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
                   <DocumentTextIcon className="w-5 h-5" />
-                  Show Document List
+                  Document Requests ({records.filter(r => r.paymentStatus !== 'paid').length})
                 </button>
-                <button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3 rounded-xl shadow-lg flex items-center gap-3 text-sm font-semibold transition-all duration-300 transform hover:scale-105">
+                <button 
+                  onClick={() => handleTabChange('records')}
+                  className={`px-8 py-3 rounded-xl shadow-lg flex items-center gap-3 text-sm font-semibold transition-all duration-300 transform hover:scale-105 ${
+                    activeTab === 'records'
+                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
                   <DocumentIcon className="w-5 h-5" />
-                  Show Certificate List
-                </button>
-                <button className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white px-8 py-3 rounded-xl shadow-lg flex items-center gap-3 text-sm font-semibold transition-all duration-300 transform hover:scale-105">
-                  <PlusIcon className="w-5 h-5" />
-                  Request Document
+                  Document Records ({records.filter(r => r.paymentStatus === 'paid' && r.status === 'Approved').length})
                 </button>
               </div>
 
@@ -1031,6 +1188,8 @@ const DocumentsRecords = () => {
                   />
                   <MagnifyingGlassIcon className="w-5 h-5 absolute left-4 top-3.5 text-gray-400" />
                 </div>
+                
+                
                 <button className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white px-6 py-3 rounded-xl text-sm font-semibold shadow-lg transition-all duration-300">
                   <FunnelIcon className="w-4 h-4" />
                 </button>
@@ -1038,17 +1197,183 @@ const DocumentsRecords = () => {
             </div>
           </div>
 
+
           {/* Enhanced Table */}
           <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
             <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4">
               <h3 className="text-white font-semibold text-lg flex items-center gap-2">
                 <DocumentTextIcon className="w-5 h-5" />
-                Document Records
+                {activeTab === 'requests' 
+                  ? (activeDocumentType === 'all' 
+                      ? 'Document Requests' 
+                      : `${activeDocumentType} Requests`)
+                  : (activeDocumentType === 'all' 
+                      ? 'Document Records' 
+                      : `${activeDocumentType} Records`)
+                }
               </h3>
             </div>
             
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
+                {/* Document Type Filter Row - Show for both tabs */}
+                {(
+                  <thead className="bg-gradient-to-r from-slate-50 to-blue-50 border-b-2 border-slate-200">
+                    <tr>
+                      <th colSpan="11" className="px-8 py-6">
+                        <div className="flex flex-wrap gap-3 justify-center">
+                            <button
+                              onClick={() => setActiveDocumentType('all')}
+                              className={`group relative px-6 py-3 rounded-2xl text-sm font-bold transition-all duration-300 transform hover:scale-105 shadow-lg ${
+                                activeDocumentType === 'all'
+                                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl ring-2 ring-blue-200'
+                                  : 'bg-white text-slate-700 border-2 border-slate-200 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <DocumentTextIcon className={`w-4 h-4 ${activeDocumentType === 'all' ? 'text-white' : 'text-blue-600'}`} />
+                                <span>All Documents</span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                  activeDocumentType === 'all' 
+                                    ? 'bg-white/20 text-white' 
+                                    : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                  {activeTab === 'requests' 
+                                    ? records.filter(r => r.paymentStatus !== 'paid').length 
+                                    : records.filter(r => r.paymentStatus === 'paid' && r.status === 'Approved').length
+                                  }
+                                </span>
+                              </div>
+                              {activeDocumentType === 'all' && (
+                                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent rounded-2xl"></div>
+                              )}
+                            </button>
+                            
+                            <button
+                              onClick={() => setActiveDocumentType('Brgy Clearance')}
+                              className={`group relative px-6 py-3 rounded-2xl text-sm font-bold transition-all duration-300 transform hover:scale-105 shadow-lg ${
+                                activeDocumentType === 'Brgy Clearance'
+                                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-xl ring-2 ring-green-200'
+                                  : 'bg-white text-slate-700 border-2 border-slate-200 hover:border-green-300 hover:bg-green-50 hover:text-green-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <DocumentTextIcon className={`w-4 h-4 ${activeDocumentType === 'Brgy Clearance' ? 'text-white' : 'text-green-600'}`} />
+                                <span>Barangay Clearance</span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                  activeDocumentType === 'Brgy Clearance' 
+                                    ? 'bg-white/20 text-white' 
+                                    : 'bg-green-100 text-green-700'
+                                }`}>
+                                  {getDocumentTypeCount('Brgy Clearance')}
+                                </span>
+                              </div>
+                              {activeDocumentType === 'Brgy Clearance' && (
+                                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent rounded-2xl"></div>
+                              )}
+                            </button>
+                            
+                            <button
+                              onClick={() => setActiveDocumentType('Brgy Business Permit')}
+                              className={`group relative px-6 py-3 rounded-2xl text-sm font-bold transition-all duration-300 transform hover:scale-105 shadow-lg ${
+                                activeDocumentType === 'Brgy Business Permit'
+                                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-xl ring-2 ring-purple-200'
+                                  : 'bg-white text-slate-700 border-2 border-slate-200 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <BuildingOfficeIcon className={`w-4 h-4 ${activeDocumentType === 'Brgy Business Permit' ? 'text-white' : 'text-purple-600'}`} />
+                                <span>Business Permit</span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                  activeDocumentType === 'Brgy Business Permit' 
+                                    ? 'bg-white/20 text-white' 
+                                    : 'bg-purple-100 text-purple-700'
+                                }`}>
+                                  {getDocumentTypeCount('Brgy Business Permit')}
+                                </span>
+                              </div>
+                              {activeDocumentType === 'Brgy Business Permit' && (
+                                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent rounded-2xl"></div>
+                              )}
+                            </button>
+                            
+                            <button
+                              onClick={() => setActiveDocumentType('Brgy Indigency')}
+                              className={`group relative px-6 py-3 rounded-2xl text-sm font-bold transition-all duration-300 transform hover:scale-105 shadow-lg ${
+                                activeDocumentType === 'Brgy Indigency'
+                                  ? 'bg-gradient-to-r from-orange-600 to-red-600 text-white shadow-xl ring-2 ring-orange-200'
+                                  : 'bg-white text-slate-700 border-2 border-slate-200 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <AcademicCapIcon className={`w-4 h-4 ${activeDocumentType === 'Brgy Indigency' ? 'text-white' : 'text-orange-600'}`} />
+                                <span>Certificate of Indigency</span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                  activeDocumentType === 'Brgy Indigency' 
+                                    ? 'bg-white/20 text-white' 
+                                    : 'bg-orange-100 text-orange-700'
+                                }`}>
+                                  {getDocumentTypeCount('Brgy Indigency')}
+                                </span>
+                              </div>
+                              {activeDocumentType === 'Brgy Indigency' && (
+                                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent rounded-2xl"></div>
+                              )}
+                            </button>
+                            
+                            <button
+                              onClick={() => setActiveDocumentType('Brgy Residency')}
+                              className={`group relative px-6 py-3 rounded-2xl text-sm font-bold transition-all duration-300 transform hover:scale-105 shadow-lg ${
+                                activeDocumentType === 'Brgy Residency'
+                                  ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-xl ring-2 ring-teal-200'
+                                  : 'bg-white text-slate-700 border-2 border-slate-200 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <BuildingOfficeIcon className={`w-4 h-4 ${activeDocumentType === 'Brgy Residency' ? 'text-white' : 'text-teal-600'}`} />
+                                <span>Certificate of Residency</span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                  activeDocumentType === 'Brgy Residency' 
+                                    ? 'bg-white/20 text-white' 
+                                    : 'bg-teal-100 text-teal-700'
+                                }`}>
+                                  {getDocumentTypeCount('Brgy Residency')}
+                                </span>
+                              </div>
+                              {activeDocumentType === 'Brgy Residency' && (
+                                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent rounded-2xl"></div>
+                              )}
+                            </button>
+                            
+                            <button
+                              onClick={() => setActiveDocumentType('Brgy Certification')}
+                              className={`group relative px-6 py-3 rounded-2xl text-sm font-bold transition-all duration-300 transform hover:scale-105 shadow-lg ${
+                                activeDocumentType === 'Brgy Certification'
+                                  ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-xl ring-2 ring-indigo-200'
+                                  : 'bg-white text-slate-700 border-2 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <DocumentIcon className={`w-4 h-4 ${activeDocumentType === 'Brgy Certification' ? 'text-white' : 'text-indigo-600'}`} />
+                                <span>Barangay Certification</span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                  activeDocumentType === 'Brgy Certification' 
+                                    ? 'bg-white/20 text-white' 
+                                    : 'bg-indigo-100 text-indigo-700'
+                                }`}>
+                                  {getDocumentTypeCount('Brgy Certification')}
+                                </span>
+                              </div>
+                              {activeDocumentType === 'Brgy Certification' && (
+                                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent rounded-2xl"></div>
+                              )}
+                            </button>
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                )}
+                
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-6 py-4 text-left font-semibold text-gray-700">Resident ID</th>
@@ -1059,6 +1384,8 @@ const DocumentsRecords = () => {
                     <th className="px-4 py-4 text-left font-semibold text-gray-700">Gender</th>
                     <th className="px-4 py-4 text-left font-semibold text-gray-700">Document Type</th>
                     <th className="px-4 py-4 text-left font-semibold text-gray-700">Status</th>
+                    <th className="px-4 py-4 text-left font-semibold text-gray-700">Amount</th>
+                    <th className="px-4 py-4 text-left font-semibold text-gray-700">Payment Status</th>
                     <th className="px-4 py-4 text-left font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
@@ -1066,11 +1393,29 @@ const DocumentsRecords = () => {
                 <tbody className="divide-y divide-gray-100">
                   {filteredRecords.length === 0 ? (
                     <tr>
-                      <td colSpan="9" className="px-6 py-12 text-center">
+                      <td colSpan="11" className="px-6 py-12 text-center">
                         <div className="flex flex-col items-center gap-3">
                           <DocumentTextIcon className="w-12 h-12 text-gray-300" />
-                          <p className="text-gray-500 font-medium">No document records found</p>
-                          <p className="text-gray-400 text-sm">Try adjusting your search criteria</p>
+                          <p className="text-gray-500 font-medium">
+                            {activeTab === 'requests' 
+                              ? (activeDocumentType === 'all' 
+                                  ? 'No document requests found' 
+                                  : `No ${activeDocumentType} requests found`)
+                              : (activeDocumentType === 'all' 
+                                  ? 'No document records found' 
+                                  : `No ${activeDocumentType} records found`)
+                            }
+                          </p>
+                          <p className="text-gray-400 text-sm">
+                            {activeTab === 'requests' 
+                              ? (activeDocumentType === 'all' 
+                                  ? 'All document requests have been processed and moved to records' 
+                                  : `No ${activeDocumentType} requests found. Try selecting a different document type.`)
+                              : (activeDocumentType === 'all' 
+                                  ? 'No paid document records found' 
+                                  : `No ${activeDocumentType} records found. Try selecting a different document type.`)
+                            }
+                          </p>
                         </div>
                       </td>
                     </tr>
@@ -1116,7 +1461,39 @@ const DocumentsRecords = () => {
                             {badge(record.status, getStatusColor(record.status), getStatusIcon(record.status))}
                           </td>
                           <td className="px-4 py-4">
-                            <div className="flex gap-2">
+                            {record.paymentAmount && record.paymentAmount > 0 ? (
+                              <div className="text-sm font-bold text-green-600">
+                                ₱{parseFloat(record.paymentAmount).toFixed(2)}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-sm">No payment</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                            {record.paymentAmount && record.paymentAmount > 0 ? (
+                              <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                                record.paymentStatus === 'paid' 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : 'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {record.paymentStatus === 'paid' ? (
+                                  <>
+                                    <CheckCircleIcon className="w-3 h-3" />
+                                    Paid
+                                  </>
+                                ) : (
+                                  <>
+                                    <ClockIcon className="w-3 h-3" />
+                                    Unpaid
+                                  </>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-sm">N/A</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                             <div className="flex gap-2">
                               <button
                                 onClick={() => handleShowDetails(record)}
                                 className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-3 py-1 rounded-lg text-xs font-semibold shadow-md flex items-center gap-1 transition-all duration-300 transform hover:scale-105"
@@ -1124,13 +1501,28 @@ const DocumentsRecords = () => {
                                 <EyeIcon className="w-3 h-3" />
                                 View
                               </button>
-                              <button
-                                onClick={() => handleEdit(record)}
-                                className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white px-3 py-1 rounded-lg text-xs font-semibold shadow-md flex items-center gap-1 transition-all duration-300 transform hover:scale-105"
-                              >
-                                <PencilIcon className="w-3 h-3" />
-                                Edit
-                              </button>
+                              {/* Only show Edit button for requests, not for finalized records */}
+                              {activeTab === 'requests' && (
+                                <button
+                                  onClick={() => handleEdit(record)}
+                                  className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white px-3 py-1 rounded-lg text-xs font-semibold shadow-md flex items-center gap-1 transition-all duration-300 transform hover:scale-105"
+                                >
+                                  <PencilIcon className="w-3 h-3" />
+                                  Edit
+                                </button>
+                              )}
+                              {/* Show Pay button for approved unpaid requests in Requests tab */}
+                              {activeTab === 'requests' && record.status === 'Approved' && record.paymentAmount && record.paymentAmount > 0 && record.paymentStatus === 'unpaid' && (
+                                <button
+                                  onClick={() => handleConfirmPayment(record)}
+                                  disabled={confirmingPayment === record.id}
+                                  className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-semibold shadow-md flex items-center gap-1 transition-all duration-300 transform hover:scale-105 disabled:opacity-50"
+                                  title={`Confirm payment of ₱${parseFloat(record.paymentAmount).toFixed(2)}`}
+                                >
+                                  <CurrencyDollarIcon className="w-3 h-3" />
+                                  {confirmingPayment === record.id ? 'Confirming...' : `Confirm Payment ₱${parseFloat(record.paymentAmount).toFixed(2)}`}
+                                </button>
+                              )}
                               {record.status === 'Approved' && (
                                 <>
                                   {!record.pdfPath ? (
@@ -1168,7 +1560,7 @@ const DocumentsRecords = () => {
 
                         {selectedRecord?.id === record.id && (
                           <tr className="bg-gradient-to-r from-green-50 to-emerald-50">
-                            <td colSpan="9" className="px-8 py-8">
+                            <td colSpan="11" className="px-8 py-8">
                               <div className="bg-white rounded-2xl shadow-lg p-8 border border-green-200">
                                 <div className="flex flex-col lg:flex-row gap-8 items-start">
                                   {/* Document Information Card */}
@@ -1198,6 +1590,39 @@ const DocumentsRecords = () => {
                                         <div><span className="font-medium text-gray-700">Remarks:</span> <span className="text-gray-900">{selectedRecord.remarks}</span></div>
                                         {selectedRecord.processingNotes && (
                                           <div className="md:col-span-2"><span className="font-medium text-gray-700">Processing Notes:</span> <span className="text-gray-900">{selectedRecord.processingNotes}</span></div>
+                                        )}
+                                        {selectedRecord.paymentAmount && selectedRecord.paymentAmount > 0 && (
+                                          <>
+                                            <div><span className="font-medium text-gray-700">Payment Amount:</span> <span className="text-gray-900 font-semibold">₱{parseFloat(selectedRecord.paymentAmount).toFixed(2)}</span></div>
+                                            <div><span className="font-medium text-gray-700">Payment Status:</span> 
+                                              <span className={`ml-2 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                                                selectedRecord.paymentStatus === 'paid' 
+                                                  ? 'bg-green-100 text-green-800' 
+                                                  : 'bg-yellow-100 text-yellow-800'
+                                              }`}>
+                                                {selectedRecord.paymentStatus === 'paid' ? (
+                                                  <>
+                                                    <CheckCircleIcon className="w-3 h-3" />
+                                                    Paid
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <ClockIcon className="w-3 h-3" />
+                                                    Unpaid
+                                                  </>
+                                                )}
+                                              </span>
+                                            </div>
+                                            {selectedRecord.paymentNotes && (
+                                              <div className="md:col-span-2"><span className="font-medium text-gray-700">Payment Notes:</span> <span className="text-gray-900">{selectedRecord.paymentNotes}</span></div>
+                                            )}
+                                            {selectedRecord.paymentApprovedAt && (
+                                              <div><span className="font-medium text-gray-700">Payment Approved:</span> <span className="text-gray-900">{formatDate(selectedRecord.paymentApprovedAt)}</span></div>
+                                            )}
+                                            {selectedRecord.paymentConfirmedAt && (
+                                              <div><span className="font-medium text-gray-700">Payment Confirmed:</span> <span className="text-gray-900">{formatDate(selectedRecord.paymentConfirmedAt)}</span></div>
+                                            )}
+                                          </>
                                         )}
                                       </div>
                                       
@@ -1352,6 +1777,41 @@ const DocumentsRecords = () => {
                       value={editData.estimatedCompletion ? new Date(editData.estimatedCompletion).toISOString().split('T')[0] : ''}
                       onChange={(e) => setEditData({...editData, estimatedCompletion: e.target.value})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Payment Amount (₱) 
+                      {editData.status?.toLowerCase() === 'approved' && (
+                        <span className="text-red-500 ml-1">*</span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={editData.paymentAmount || ''}
+                      onChange={(e) => setEditData({...editData, paymentAmount: parseFloat(e.target.value) || 0})}
+                      className={`w-full px-4 py-3 border rounded-xl text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300 ${
+                        editData.status?.toLowerCase() === 'approved' && (!editData.paymentAmount || editData.paymentAmount <= 0)
+                          ? 'border-red-300 bg-red-50'
+                          : 'border-gray-300'
+                      }`}
+                      placeholder={editData.status?.toLowerCase() === 'approved' ? "Required for approval" : "Enter payment amount"}
+                      required={editData.status?.toLowerCase() === 'approved'}
+                    />
+                    {editData.status?.toLowerCase() === 'approved' && (!editData.paymentAmount || editData.paymentAmount <= 0) && (
+                      <p className="text-red-500 text-xs mt-1">Payment amount is required when approving</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Payment Notes</label>
+                    <textarea
+                      value={editData.paymentNotes || ''}
+                      onChange={(e) => setEditData({...editData, paymentNotes: e.target.value})}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
+                      placeholder="Enter payment notes (optional)"
+                      rows="3"
                     />
                   </div>
                 </div>

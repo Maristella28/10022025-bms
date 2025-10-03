@@ -14,10 +14,19 @@ class Project extends Model
         'owner',
         'deadline',
         'status',
-        'photo'
+        'photo',
+        'published',
+        'completed_at',
+        'remarks',
+        'uploaded_files',
+        'created_by_admin'
     ];
 
     protected $casts = [
         'deadline' => 'date',
+        'completed_at' => 'datetime',
+        'uploaded_files' => 'array',
+        'published' => 'boolean',
+        'created_by_admin' => 'boolean',
     ];
 }

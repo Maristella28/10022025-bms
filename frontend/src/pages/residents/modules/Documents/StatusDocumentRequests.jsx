@@ -11,6 +11,10 @@ import {
   PhoneIcon,
   EnvelopeIcon,
   DocumentArrowDownIcon,
+  XMarkIcon,
+  ArrowPathIcon,
+  ExclamationCircleIcon,
+  CurrencyDollarIcon,
 } from "@heroicons/react/24/solid";
 import axios from '../../../../utils/axiosConfig';
 
@@ -20,6 +24,8 @@ const StatusDocumentRequests = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [downloadingPdf, setDownloadingPdf] = useState(null);
+  const [confirmingPayment, setConfirmingPayment] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
 
   useEffect(() => {
     fetchMyRequests();
@@ -125,6 +131,37 @@ const StatusDocumentRequests = () => {
     }
   };
 
+  const handleConfirmPayment = async (request) => {
+    setConfirmingPayment(request.id);
+    setToastMessage({
+      type: 'loading',
+      message: 'Confirming payment...',
+      duration: 0
+    });
+    
+    try {
+      const response = await axios.post(`/document-requests/${request.id}/confirm-payment`);
+      
+      setToastMessage({
+        type: 'success',
+        message: '✅ Payment confirmed successfully! Your document will be processed.',
+        duration: 4000
+      });
+      
+      // Refresh requests to get updated data
+      await fetchMyRequests();
+    } catch (err) {
+      console.error('Error confirming payment:', err);
+      setToastMessage({
+        type: 'error',
+        message: `❌ ${err.response?.data?.message || 'Failed to confirm payment. Please try again.'}`,
+        duration: 4000
+      });
+    } finally {
+      setConfirmingPayment(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex items-center justify-center">
@@ -153,8 +190,59 @@ const StatusDocumentRequests = () => {
     );
   }
 
+  // Auto-hide toast messages
+  React.useEffect(() => {
+    if (toastMessage && toastMessage.duration > 0) {
+      const timer = setTimeout(() => {
+        setToastMessage(null);
+      }, toastMessage.duration);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
+
+  // Toast Notification Component
+  const ToastNotification = ({ message, type, onClose }) => (
+    <div className={`fixed top-24 right-6 z-50 max-w-md rounded-xl shadow-2xl border-2 p-4 transition-all duration-500 transform ${
+      message ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+    } ${
+      type === 'success'
+        ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200 text-green-800'
+        : type === 'loading'
+        ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 text-blue-800'
+        : 'bg-gradient-to-r from-red-50 to-rose-50 border-red-200 text-red-800'
+    }`}>
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0 mt-0.5">
+          {type === 'success' && <CheckCircleIcon className="w-5 h-5 text-green-600" />}
+          {type === 'loading' && <ArrowPathIcon className="w-5 h-5 text-blue-600 animate-spin" />}
+          {type === 'error' && <ExclamationCircleIcon className="w-5 h-5 text-red-600" />}
+        </div>
+        <div className="flex-1">
+          <div className="font-semibold text-sm">{message}</div>
+        </div>
+        {type !== 'loading' && (
+          <button
+            onClick={onClose}
+            className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <XMarkIcon className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-white p-6">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <ToastNotification
+          message={toastMessage.message}
+          type={toastMessage.type}
+          onClose={() => setToastMessage(null)}
+        />
+      )}
+      
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
         <div className="text-center space-y-4">
@@ -252,6 +340,12 @@ const StatusDocumentRequests = () => {
                                 Approved: {formatDate(request.updated_at)}
                               </span>
                             )}
+                            {request.payment_amount && request.payment_amount > 0 && (
+                              <span className="flex items-center gap-1 text-green-600 font-medium">
+                                <CurrencyDollarIcon className="w-4 h-4" />
+                                Payment: ₱{parseFloat(request.payment_amount).toFixed(2)}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -265,6 +359,16 @@ const StatusDocumentRequests = () => {
                           >
                             <EyeIcon className="w-4 h-4" />
                           </button>
+                          {request.status.toLowerCase() === 'approved' && request.payment_amount && request.payment_amount > 0 && request.payment_status === 'unpaid' && (
+                            <button
+                              onClick={() => handleConfirmPayment(request)}
+                              disabled={confirmingPayment === request.id}
+                              className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-1"
+                            >
+                              <CurrencyDollarIcon className="w-4 h-4" />
+                              {confirmingPayment === request.id ? 'Confirming...' : `Pay ₱${parseFloat(request.payment_amount).toFixed(2)}`}
+                            </button>
+                          )}
                           {request.status.toLowerCase() === 'approved' && request.pdf_path && (
                             <button
                               onClick={() => handleDownloadPdf(request)}
@@ -302,6 +406,36 @@ const StatusDocumentRequests = () => {
                             )}
                             {request.fields?.remarks && (
                               <div><span className="font-medium text-gray-700">Remarks:</span> {request.fields.remarks}</div>
+                            )}
+                            {request.payment_amount && request.payment_amount > 0 && (
+                              <>
+                                <div><span className="font-medium text-gray-700">Payment Amount:</span> <span className="text-green-600 font-semibold">₱{parseFloat(request.payment_amount).toFixed(2)}</span></div>
+                                <div><span className="font-medium text-gray-700">Payment Status:</span> 
+                                  <span className={`ml-2 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                                    request.payment_status === 'paid' 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : 'bg-yellow-100 text-yellow-800'
+                                  }`}>
+                                    {request.payment_status === 'paid' ? (
+                                      <>
+                                        <CheckCircleIcon className="w-3 h-3" />
+                                        Paid
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ClockIcon className="w-3 h-3" />
+                                        Unpaid
+                                      </>
+                                    )}
+                                  </span>
+                                </div>
+                                {request.payment_notes && (
+                                  <div><span className="font-medium text-gray-700">Payment Notes:</span> {request.payment_notes}</div>
+                                )}
+                                {request.payment_confirmed_at && (
+                                  <div><span className="font-medium text-gray-700">Payment Confirmed:</span> {formatDate(request.payment_confirmed_at)}</div>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>

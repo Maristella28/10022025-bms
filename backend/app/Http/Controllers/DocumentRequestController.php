@@ -215,9 +215,12 @@ class DocumentRequestController extends Controller
             'processing_notes' => 'nullable|string',
             'priority' => 'nullable|in:low,normal,high,urgent',
             'estimated_completion' => 'nullable|date',
+            'payment_amount' => 'nullable|numeric|min:0',
+            'payment_notes' => 'nullable|string',
         ]);
         
         $docRequest = DocumentRequest::findOrFail($id);
+        $oldStatus = $docRequest->status;
         $docRequest->status = $validated['status'];
         
         if (isset($validated['fields'])) {
@@ -240,12 +243,30 @@ class DocumentRequestController extends Controller
             $docRequest->estimated_completion = $validated['estimated_completion'];
         }
         
+        // Handle payment approval when status changes to approved
+        if (strtolower($validated['status']) === 'approved' && strtolower($oldStatus) !== 'approved') {
+            if (isset($validated['payment_amount']) && $validated['payment_amount'] > 0) {
+                $docRequest->payment_amount = $validated['payment_amount'];
+                $docRequest->payment_status = 'unpaid';
+                $docRequest->payment_completed = 0;
+            }
+            
+            if (isset($validated['payment_notes'])) {
+                $docRequest->payment_notes = $validated['payment_notes'];
+            }
+        }
+        
         // Set completed_at timestamp when status changes to completed/approved
         if (in_array(strtolower($validated['status']), ['completed', 'approved']) && !$docRequest->completed_at) {
             $docRequest->completed_at = now();
         }
         
         $docRequest->save();
+        
+        // Send notification to resident if approved with payment
+        if (strtolower($validated['status']) === 'approved' && strtolower($oldStatus) !== 'approved' && $docRequest->payment_amount > 0) {
+            $this->sendPaymentApprovalNotification($docRequest);
+        }
         
         return response()->json($docRequest->load(['user', 'resident']));
     }
@@ -571,6 +592,239 @@ class DocumentRequestController extends Controller
                 'message' => 'Failed to delete photo.',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    // Resident: Confirm payment for approved document request
+    public function confirmPayment(Request $request, $id)
+    {
+        try {
+            $user = Auth::user();
+            $docRequest = DocumentRequest::where('id', $id)
+                ->where('user_id', $user->id)
+                ->with(['user', 'resident'])
+                ->firstOrFail();
+
+            // Check if document is approved and has payment amount
+            if (strtolower($docRequest->status) !== 'approved') {
+                return response()->json([
+                    'message' => 'Only approved document requests can be paid.',
+                    'error_code' => 'NOT_APPROVED'
+                ], 400);
+            }
+
+            if (!$docRequest->payment_amount || $docRequest->payment_amount <= 0) {
+                return response()->json([
+                    'message' => 'No payment amount set for this document request.',
+                    'error_code' => 'NO_PAYMENT_AMOUNT'
+                ], 400);
+            }
+
+            if ($docRequest->payment_status === 'paid') {
+                return response()->json([
+                    'message' => 'Payment has already been confirmed for this document request.',
+                    'error_code' => 'ALREADY_PAID'
+                ], 400);
+            }
+
+            // Update payment status
+            $docRequest->update([
+                'payment_status' => 'paid',
+                'payment_date' => now(),
+                'payment_completed' => 1
+            ]);
+
+            // Send notification to admin about payment confirmation
+            $this->sendPaymentConfirmationNotification($docRequest);
+
+            return response()->json([
+                'message' => 'Payment confirmed successfully. Your document will be processed.',
+                'document_request' => $docRequest->load(['user', 'resident'])
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Payment Confirmation Error', [
+                'document_request_id' => $id,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to confirm payment.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Admin: Confirm payment for a document request
+    public function adminConfirmPayment(Request $request, $id)
+    {
+        try {
+            $docRequest = DocumentRequest::findOrFail($id);
+
+            // Check if document is approved and has payment amount
+            if (strtolower($docRequest->status) !== 'approved') {
+                return response()->json([
+                    'message' => 'Only approved document requests can be paid.',
+                    'error_code' => 'NOT_APPROVED'
+                ], 400);
+            }
+
+            if (!$docRequest->payment_amount || $docRequest->payment_amount <= 0) {
+                return response()->json([
+                    'message' => 'No payment amount set for this document request.',
+                    'error_code' => 'NO_PAYMENT_AMOUNT'
+                ], 400);
+            }
+
+            if ($docRequest->payment_status === 'paid') {
+                return response()->json([
+                    'message' => 'Payment has already been confirmed for this document request.',
+                    'error_code' => 'ALREADY_PAID'
+                ], 400);
+            }
+
+            // Update payment status
+            $docRequest->update([
+                'payment_status' => 'paid',
+                'payment_date' => now(),
+                'payment_completed' => 1
+            ]);
+
+            // Send notification to admin about payment confirmation
+            $this->sendPaymentConfirmationNotification($docRequest);
+
+            return response()->json([
+                'message' => 'Payment confirmed successfully. Document has been moved to records.',
+                'document_request' => $docRequest->load(['user', 'resident'])
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Admin Payment Confirmation Error', [
+                'document_request_id' => $id,
+                'admin_id' => Auth::id(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to confirm payment.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Admin: Get paid document records (for Document Records section)
+    public function getPaidRecords(Request $request)
+    {
+        try {
+            $query = DocumentRequest::where('payment_status', 'paid')
+                ->where('status', 'approved')
+                ->with(['user', 'resident', 'paymentApprovedBy', 'paymentConfirmedBy']);
+
+            // Filter by document type if provided
+            if ($request->has('document_type') && $request->document_type !== 'all') {
+                $query->where('document_type', $request->document_type);
+            }
+
+            // Filter by date range if provided
+            if ($request->has('date_from')) {
+                $query->whereDate('payment_confirmed_at', '>=', $request->date_from);
+            }
+            if ($request->has('date_to')) {
+                $query->whereDate('payment_confirmed_at', '<=', $request->date_to);
+            }
+
+            $records = $query->orderBy('payment_confirmed_at', 'desc')->get();
+
+            return response()->json($records);
+
+        } catch (\Exception $e) {
+            \Log::error('Get Paid Records Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to fetch paid records.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Get document type statistics
+    public function getDocumentTypeStats()
+    {
+        try {
+            $stats = DocumentRequest::selectRaw('document_type, COUNT(*) as total_count')
+                ->where('payment_status', 'paid')
+                ->where('status', 'approved')
+                ->groupBy('document_type')
+                ->get();
+
+            return response()->json($stats);
+
+        } catch (\Exception $e) {
+            \Log::error('Get Document Type Stats Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to fetch document type statistics.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Send payment approval notification to resident
+    private function sendPaymentApprovalNotification($documentRequest)
+    {
+        try {
+            // This would integrate with your notification system
+            // For now, we'll just log it
+            \Log::info('Payment Approval Notification', [
+                'document_request_id' => $documentRequest->id,
+                'user_id' => $documentRequest->user_id,
+                'document_type' => $documentRequest->document_type,
+                'payment_amount' => $documentRequest->payment_amount,
+                'resident_name' => $documentRequest->user->name ?? 'Unknown'
+            ]);
+
+            // TODO: Implement actual notification sending
+            // This could be email, SMS, or in-app notification
+
+        } catch (\Exception $e) {
+            \Log::error('Send Payment Approval Notification Error', [
+                'document_request_id' => $documentRequest->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    // Send payment confirmation notification to admin
+    private function sendPaymentConfirmationNotification($documentRequest)
+    {
+        try {
+            // This would integrate with your notification system
+            // For now, we'll just log it
+            \Log::info('Payment Confirmation Notification', [
+                'document_request_id' => $documentRequest->id,
+                'user_id' => $documentRequest->user_id,
+                'document_type' => $documentRequest->document_type,
+                'payment_amount' => $documentRequest->payment_amount,
+                'resident_name' => $documentRequest->user->name ?? 'Unknown'
+            ]);
+
+            // TODO: Implement actual notification sending
+            // This could be email, SMS, or in-app notification
+
+        } catch (\Exception $e) {
+            \Log::error('Send Payment Confirmation Notification Error', [
+                'document_request_id' => $documentRequest->id,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 }

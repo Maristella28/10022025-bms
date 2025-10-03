@@ -334,6 +334,7 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
         Route::get('/document-requests', [App\Http\Controllers\DocumentRequestController::class, 'index']);
         Route::post('/document-requests', [App\Http\Controllers\DocumentRequestController::class, 'store']);
         Route::get('/document-requests/my', [App\Http\Controllers\DocumentRequestController::class, 'myRequests']);
+        Route::post('/document-requests/{id}/confirm-payment', [App\Http\Controllers\DocumentRequestController::class, 'confirmPayment']); // Resident confirm payment
 
         // Projects reactions and viewing
         Route::post('/projects/{projectId}/react', [App\Http\Controllers\ProjectReactionController::class, 'react']);
@@ -399,6 +400,9 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
     Route::post('/document-requests/{id}/generate-pdf', [App\Http\Controllers\DocumentRequestController::class, 'generatePdf']); // Generate PDF
     Route::get('/document-requests/{id}/download-pdf', [App\Http\Controllers\DocumentRequestController::class, 'downloadPdf']); // Download PDF
     Route::get('/test-pdf', [App\Http\Controllers\DocumentRequestController::class, 'testPdf']); // Test PDF system
+    Route::get('/document-requests/paid-records', [App\Http\Controllers\DocumentRequestController::class, 'getPaidRecords']); // Get paid records for Document Records
+    Route::get('/document-requests/document-type-stats', [App\Http\Controllers\DocumentRequestController::class, 'getDocumentTypeStats']); // Get document type statistics
+    Route::post('/document-requests/{id}/admin-confirm-payment', [App\Http\Controllers\DocumentRequestController::class, 'adminConfirmPayment']); // Admin confirm payment
     
     // Photo management for document requests
     Route::get('/document-requests/{id}/photo', [App\Http\Controllers\DocumentRequestController::class, 'viewPhoto']); // View uploaded photo

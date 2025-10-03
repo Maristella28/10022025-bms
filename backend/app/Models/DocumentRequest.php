@@ -46,6 +46,12 @@ class DocumentRequest extends Model
         'photo_path',
         'photo_type',
         'photo_metadata',
+        'payment_amount',
+        'payment_status',
+        'payment_notes',
+        'payment_date',
+        'payment_completed',
+        'payment_method',
     ];
 
     protected $casts = [
@@ -54,6 +60,9 @@ class DocumentRequest extends Model
         'photo_metadata' => 'array',
         'estimated_completion' => 'date',
         'completed_at' => 'datetime',
+        'payment_amount' => 'decimal:2',
+        'payment_date' => 'datetime',
+        'payment_completed' => 'boolean',
     ];
 
     public function user()
@@ -65,4 +74,5 @@ class DocumentRequest extends Model
     {
         return $this->belongsTo(Resident::class, 'user_id', 'user_id');
     }
+
 } 
