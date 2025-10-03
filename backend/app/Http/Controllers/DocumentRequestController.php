@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\DocumentRequest;
 use App\Models\Resident;
 use App\Services\PdfService;
+use App\Exports\DocumentRecordsExport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Maatwebsite\Excel\Facades\Excel;
 
 class DocumentRequestController extends Controller
 {
@@ -825,6 +827,95 @@ class DocumentRequestController extends Controller
                 'document_request_id' => $documentRequest->id,
                 'error' => $e->getMessage()
             ]);
+        }
+    }
+
+    // Export paid document records to Excel
+    public function exportExcel()
+    {
+        try {
+            \Log::info('Starting Excel export for paid document records');
+            
+            // Get only paid and approved document requests with related data
+            $records = DocumentRequest::with(['user', 'resident'])
+                ->where('payment_status', 'paid')
+                ->where('status', 'approved')
+                ->orderBy('created_at', 'desc')
+                ->get();
+            
+            \Log::info('Retrieved paid records for export', [
+                'count' => $records->count()
+            ]);
+            
+            if ($records->isEmpty()) {
+                return response()->json([
+                    'message' => 'No paid document records found to export.'
+                ], 404);
+            }
+            
+            // Generate filename with current date
+            $filename = 'Paid_Document_Records_' . now()->format('Y-m-d_H-i-s') . '.xlsx';
+            
+            \Log::info('Generating Excel file for paid records', [
+                'filename' => $filename,
+                'record_count' => $records->count()
+            ]);
+            
+            // Return Excel download
+            return Excel::download(new DocumentRecordsExport($records), $filename);
+            
+        } catch (\Exception $e) {
+            \Log::error('Excel Export Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to export paid document records to Excel.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Test Excel export (returns JSON for debugging)
+    public function testExcelExport()
+    {
+        try {
+            \Log::info('Testing Excel export functionality for paid records');
+            
+            // Get paid and approved document requests with related data
+            $records = DocumentRequest::with(['user', 'resident'])
+                ->where('payment_status', 'paid')
+                ->where('status', 'approved')
+                ->orderBy('created_at', 'desc')
+                ->take(5)
+                ->get();
+            
+            \Log::info('Retrieved test paid records', [
+                'count' => $records->count()
+            ]);
+            
+            return response()->json([
+                'message' => 'Excel export test successful for paid records',
+                'record_count' => $records->count(),
+                'sample_record' => $records->first(),
+                'excel_available' => class_exists('Maatwebsite\Excel\Facades\Excel'),
+                'export_class_available' => class_exists('App\Exports\DocumentRecordsExport'),
+                'filter_applied' => 'payment_status=paid AND status=approved'
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Excel Export Test Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'Excel export test failed',
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ], 500);
         }
     }
 }

@@ -402,7 +402,10 @@ Route::middleware(['auth:sanctum', 'throttle:200,1'])->group(function () {
     Route::get('/test-pdf', [App\Http\Controllers\DocumentRequestController::class, 'testPdf']); // Test PDF system
     Route::get('/document-requests/paid-records', [App\Http\Controllers\DocumentRequestController::class, 'getPaidRecords']); // Get paid records for Document Records
     Route::get('/document-requests/document-type-stats', [App\Http\Controllers\DocumentRequestController::class, 'getDocumentTypeStats']); // Get document type statistics
+    Route::get('/document-requests/export-excel', [App\Http\Controllers\DocumentRequestController::class, 'exportExcel']); // Export all document records to Excel
     Route::post('/document-requests/{id}/admin-confirm-payment', [App\Http\Controllers\DocumentRequestController::class, 'adminConfirmPayment']); // Admin confirm payment
+    Route::get('/test-excel-export', [App\Http\Controllers\DocumentRequestController::class, 'exportExcel']); // Test Excel export without auth
+    Route::get('/test-excel-debug', [App\Http\Controllers\DocumentRequestController::class, 'testExcelExport']); // Debug Excel export
     
     // Photo management for document requests
     Route::get('/document-requests/{id}/photo', [App\Http\Controllers\DocumentRequestController::class, 'viewPhoto']); // View uploaded photo

@@ -30,6 +30,7 @@ import {
   ClockIcon as RefreshIcon,
   ArrowDownTrayIcon,
   CurrencyDollarIcon,
+  TableCellsIcon,
 } from "@heroicons/react/24/solid";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useTestData, getTestDocumentRecords } from '../../testData/documentRecordsTestData';
@@ -138,11 +139,13 @@ const DocumentsRecords = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [chartData, setChartData] = useState([]);
   const [confirmingPayment, setConfirmingPayment] = useState(null);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
 
   const currentYear = new Date().getFullYear();
   const [selectedPeriod, setSelectedPeriod] = useState('all');
   const [selectedYear, setSelectedYear] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(0); // 0 means no month selected
+  const [selectedQuarter, setSelectedQuarter] = useState(0); // 0 means no quarter selected
   const [activeTab, setActiveTab] = useState('requests'); // 'requests' or 'records'
   const [selectedDocumentType, setSelectedDocumentType] = useState('all');
   const [activeDocumentType, setActiveDocumentType] = useState('all'); // For document type tabs
@@ -760,6 +763,117 @@ const DocumentsRecords = () => {
     }
   };
 
+  // Download Excel for paid document records only
+  const handleDownloadExcel = async () => {
+    setDownloadingExcel(true);
+    setToastMessage({
+      type: 'loading',
+      message: 'Preparing paid records export...',
+      duration: 0
+    });
+    
+    try {
+      console.log('Downloading Excel for paid document records');
+      
+      const response = await axiosInstance.get('/document-requests/export-excel', {
+        responseType: 'blob',
+        headers: {
+          'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+      });
+      
+      // Validate response data
+      if (!response.data || response.data.size === 0) {
+        throw new Error('Received empty Excel data from server');
+      }
+      
+      // Log response details for debugging
+      console.log('Excel download response:', {
+        contentType: response.headers['content-type'],
+        contentLength: response.headers['content-length'],
+        blobSize: response.data.size
+      });
+      
+      const blob = new Blob([response.data], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      
+      // Log blob details
+      console.log('Created Excel Blob:', {
+        size: blob.size,
+        type: blob.type,
+        url: url
+      });
+      
+      const link = document.createElement('a');
+      link.href = url;
+      const currentDate = new Date().toISOString().split('T')[0];
+      link.setAttribute('download', `Document_Records_${currentDate}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      
+      // Clean up URL after a short delay to ensure download starts
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        console.log('Cleaned up Excel Blob URL:', url);
+      }, 100);
+      
+      setToastMessage({
+        type: 'success',
+        message: `📊 Paid document records exported successfully!`,
+        duration: 3000
+      });
+    } catch (err) {
+      console.error('Download Excel error:', err);
+      console.error('Error details:', {
+        response: err.response,
+        request: err.request,
+        message: err.message,
+        stack: err.stack
+      });
+      
+      let errorMessage = '❌ Failed to download Excel file. ';
+      if (err.response) {
+        switch (err.response.status) {
+          case 404:
+            errorMessage += 'Export endpoint not found.';
+            break;
+          case 403:
+            errorMessage += 'You do not have permission to export data.';
+            break;
+          case 500:
+            errorMessage += 'Server error while generating Excel file.';
+            break;
+          default:
+            errorMessage += err.response?.data?.message || 'Please try again.';
+        }
+        console.error('Response error details:', {
+          status: err.response.status,
+          statusText: err.response.statusText,
+          data: err.response.data
+        });
+      } else if (err.request) {
+        errorMessage += 'Network error. Please check your connection.';
+        console.error('Network error details:', {
+          request: err.request,
+          config: err.config
+        });
+      } else {
+        errorMessage += err.message || 'Please try again.';
+      }
+      
+      setToastMessage({
+        type: 'error',
+        message: errorMessage,
+        duration: 4000
+      });
+    } finally {
+      setDownloadingExcel(false);
+    }
+  };
+
   // Generate chart data for document requests based on period, year, and month
   const generateChartData = (records, period = 'all', year = '', month = 0) => {
     const now = new Date();
@@ -870,34 +984,65 @@ const DocumentsRecords = () => {
     return data;
   };
 
-  // Get most requested document type based on period, year, and month
-  const getMostRequestedDocument = (records, period = 'all', year = '', month = 0) => {
+  // Filter records based on selected time period
+  const getFilteredRecords = (records, period, year, month, quarter) => {
+    if (period === 'all') return records;
+    
     const yearNum = year ? parseInt(year) : currentYear;
     const monthNum = month;
-    let filtered = records;
-    if (period === 'month' && monthNum > 0) {
-      filtered = records.filter(record => {
-        if (!record.requestDate) return false;
-        const date = new Date(record.requestDate);
-        return date.getMonth() + 1 === monthNum && date.getFullYear() === yearNum;
-      });
-    } else if (period === 'year') {
-      if (monthNum > 0) {
-        filtered = records.filter(record => {
-          if (!record.requestDate) return false;
-          const date = new Date(record.requestDate);
-          return date.getMonth() + 1 === monthNum && date.getFullYear() === yearNum;
-        });
-      } else {
-        filtered = records.filter(record => {
-          if (!record.requestDate) return false;
-          const date = new Date(record.requestDate);
-          return date.getFullYear() === yearNum;
-        });
+    const quarterNum = quarter;
+    
+    return records.filter(record => {
+      if (!record.requestDate) return false;
+      const date = new Date(record.requestDate);
+      const recordYear = date.getFullYear();
+      const recordMonth = date.getMonth() + 1;
+      
+      if (period === 'quarter') {
+        if (quarterNum > 0) {
+          const quarterStartMonth = (quarterNum - 1) * 3 + 1;
+          const quarterEndMonth = quarterNum * 3;
+          return recordYear === yearNum && recordMonth >= quarterStartMonth && recordMonth <= quarterEndMonth;
+        } else {
+          // If no quarter selected, show all quarters of the selected year
+          return recordYear === yearNum;
+        }
+      } else if (period === 'month') {
+        if (monthNum > 0) {
+          return recordMonth === monthNum && recordYear === yearNum;
+        } else {
+          // If no month selected, show current month
+          const currentDate = new Date();
+          return recordMonth === currentDate.getMonth() + 1 && recordYear === currentDate.getFullYear();
+        }
+      } else if (period === 'year') {
+        if (monthNum > 0) {
+          return recordMonth === monthNum && recordYear === yearNum;
+        } else {
+          return recordYear === yearNum;
+        }
       }
-    }
-    // for 'all', use all records
+      return true;
+    });
+  };
 
+  // Get filtered records for current selection
+  const currentFilteredRecords = getFilteredRecords(records, selectedPeriod, selectedYear, selectedMonth, selectedQuarter);
+  
+  // Debug logging
+  console.log('Filter Debug:', {
+    selectedPeriod,
+    selectedYear,
+    selectedMonth,
+    selectedQuarter,
+    totalRecords: records.length,
+    filteredRecords: currentFilteredRecords.length,
+    currentYear
+  });
+
+  // Get most requested document type based on period, year, month, and quarter
+  const getMostRequestedDocument = (records, period = 'all', year = '', month = 0, quarter = 0) => {
+    const filtered = getFilteredRecords(records, period, year, month, quarter);
     const counts = {};
     filtered.forEach(record => {
       counts[record.documentType] = (counts[record.documentType] || 0) + 1;
@@ -912,6 +1057,94 @@ const DocumentsRecords = () => {
       }
     }
     return { type: most, count: max };
+  };
+
+  // Generate suggestions based on current data
+  const generateSuggestions = () => {
+    const suggestions = [];
+    const totalRequests = currentFilteredRecords.length;
+    const approvedCount = currentFilteredRecords.filter(r => r.status === 'Approved').length;
+    const paidCount = currentFilteredRecords.filter(r => r.paymentStatus === 'paid').length;
+    const approvalRate = totalRequests > 0 ? Math.round((approvedCount / totalRequests) * 100) : 0;
+    const paymentRate = totalRequests > 0 ? Math.round((paidCount / totalRequests) * 100) : 0;
+
+    // Approval rate suggestions
+    if (approvalRate < 50) {
+      suggestions.push({
+        type: 'warning',
+        icon: '⚠️',
+        title: 'Low Approval Rate',
+        message: `Your approval rate is ${approvalRate}%. Consider reviewing pending requests more frequently.`,
+        action: 'Review pending requests'
+      });
+    } else if (approvalRate > 80) {
+      suggestions.push({
+        type: 'success',
+        icon: '✅',
+        title: 'Excellent Approval Rate',
+        message: `Great job! Your approval rate is ${approvalRate}%. Keep up the good work!`,
+        action: 'Maintain current pace'
+      });
+    }
+
+    // Payment rate suggestions
+    if (paymentRate < 30) {
+      suggestions.push({
+        type: 'warning',
+        icon: '💰',
+        title: 'Low Payment Collection',
+        message: `Only ${paymentRate}% of requests are paid. Consider implementing payment reminders.`,
+        action: 'Send payment reminders'
+      });
+    }
+
+    // Processing time suggestions
+    const avgProcessingTime = currentFilteredRecords.filter(r => r.status === 'Approved' && r.approvedDate).length > 0 
+      ? Math.round(currentFilteredRecords.filter(r => r.status === 'Approved' && r.approvedDate)
+          .reduce((acc, r) => {
+            const requestDate = new Date(r.requestDate);
+            const approvedDate = new Date(r.approvedDate);
+            return acc + Math.round((approvedDate - requestDate) / (1000 * 60 * 60 * 24));
+          }, 0) / currentFilteredRecords.filter(r => r.status === 'Approved' && r.approvedDate).length)
+      : 0;
+
+    if (avgProcessingTime > 7) {
+      suggestions.push({
+        type: 'info',
+        icon: '⏱️',
+        title: 'Slow Processing Time',
+        message: `Average processing time is ${avgProcessingTime} days. Consider streamlining the approval process.`,
+        action: 'Optimize workflow'
+      });
+    }
+
+    // Document type suggestions
+    const mostRequested = getMostRequestedDocument(currentFilteredRecords, selectedPeriod, selectedYear, selectedMonth, selectedQuarter);
+    if (mostRequested.type !== 'N/A' && mostRequested.count > 0) {
+      suggestions.push({
+        type: 'info',
+        icon: '📊',
+        title: 'Popular Document Type',
+        message: `${mostRequested.type} is the most requested (${mostRequested.count} requests). Consider preparing templates.`,
+        action: 'Create templates'
+      });
+    }
+
+    // Revenue suggestions
+    const totalRevenue = currentFilteredRecords.reduce((sum, r) => sum + (parseFloat(r.paymentAmount) || 0), 0);
+    const paidRevenue = currentFilteredRecords.filter(r => r.paymentStatus === 'paid').reduce((sum, r) => sum + (parseFloat(r.paymentAmount) || 0), 0);
+    
+    if (totalRevenue > 0 && paidRevenue < totalRevenue * 0.5) {
+      suggestions.push({
+        type: 'warning',
+        icon: '💸',
+        title: 'Revenue Collection Issue',
+        message: `Only ₱${paidRevenue.toLocaleString()} collected out of ₱${totalRevenue.toLocaleString()} potential revenue.`,
+        action: 'Follow up on payments'
+      });
+    }
+
+    return suggestions.slice(0, 4); // Limit to 4 suggestions
   };
 
   // Auto-hide toast messages
@@ -1013,42 +1246,79 @@ const DocumentsRecords = () => {
             />
           </div>
 
-          {/* Analytics Section */}
+          {/* Enhanced Analytics Dashboard */}
           <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 mb-8">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <DocumentTextIcon className="w-5 h-5" />
-                Document Requests Analytics
-              </h3>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
+                    <DocumentTextIcon className="w-6 h-6 text-white" />
+                  </div>
+                  Document Analytics Dashboard
+                </h3>
+                <p className="text-gray-600 mt-2">Comprehensive insights into document request patterns and performance metrics</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-sm text-gray-500">Filtered by:</span>
+                  <span className="text-sm font-medium text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                    {selectedPeriod === 'quarter' ? 
+                      (selectedQuarter > 0 ? `Q${selectedQuarter} ${selectedYear || currentYear}` : `${selectedYear || currentYear}`) :
+                     selectedPeriod === 'month' ? 
+                      (selectedMonth > 0 ? `${selectedMonth}/${selectedYear || currentYear}` : 'current month') :
+                     selectedPeriod === 'year' ? `${selectedYear || currentYear}` :
+                     'All time'} • {currentFilteredRecords.length} records
+                  </span>
+                </div>
+              </div>
               <div className="flex flex-col sm:flex-row gap-2">
                 <select
                   value={selectedPeriod}
                   onChange={(e) => {
                     setSelectedPeriod(e.target.value);
-                    if (e.target.value !== 'month') setSelectedMonth(0);
+                    if (e.target.value !== 'month' && e.target.value !== 'quarter') setSelectedMonth(0);
+                    if (e.target.value !== 'quarter') setSelectedQuarter(0);
                     if (e.target.value === 'all') {
                       setSelectedYear('');
                       setSelectedMonth(0);
+                      setSelectedQuarter(0);
                     }
                   }}
                   className="px-4 py-2 border-2 border-gray-200 focus:ring-4 focus:ring-green-100 focus:border-green-500 rounded-xl text-sm font-medium bg-white shadow-sm"
                 >
                   <option value="month">This Month</option>
+                  <option value="quarter">Quarterly</option>
                   <option value="year">This Year</option>
                   <option value="all">All Time</option>
                 </select>
-                {(selectedPeriod === 'month' || selectedPeriod === 'year') && (
+                {(selectedPeriod === 'month' || selectedPeriod === 'year' || selectedPeriod === 'quarter') && (
                   <select
                     value={selectedYear}
                     onChange={(e) => {
                       setSelectedYear(e.target.value);
                       setSelectedMonth(0);
+                      setSelectedQuarter(0);
                     }}
                     className="px-4 py-2 border-2 border-gray-200 focus:ring-4 focus:ring-green-100 focus:border-green-500 rounded-xl text-sm font-medium bg-white shadow-sm"
                   >
                     <option value="">Select Year</option>
                     {Array.from({ length: 16 }, (_, i) => currentYear - 10 + i).map(year => (
                       <option key={year} value={year.toString()}>{year}</option>
+                    ))}
+                  </select>
+                )}
+                {selectedPeriod === 'quarter' && selectedYear && (
+                  <select
+                    value={selectedQuarter}
+                    onChange={(e) => setSelectedQuarter(parseInt(e.target.value))}
+                    className="px-4 py-2 border-2 border-gray-200 focus:ring-4 focus:ring-green-100 focus:border-green-500 rounded-xl text-sm font-medium bg-white shadow-sm"
+                  >
+                    <option value={0}>All Quarters</option>
+                    {[
+                      { value: 1, name: 'Q1 (Jan-Mar)' },
+                      { value: 2, name: 'Q2 (Apr-Jun)' },
+                      { value: 3, name: 'Q3 (Jul-Sep)' },
+                      { value: 4, name: 'Q4 (Oct-Dec)' }
+                    ].map(q => (
+                      <option key={q.value} value={q.value}>{q.name}</option>
                     ))}
                   </select>
                 )}
@@ -1077,7 +1347,7 @@ const DocumentsRecords = () => {
                     ))}
                   </select>
                 )}
-                {(selectedPeriod === 'month' || selectedPeriod === 'year') && !selectedYear && (
+                {(selectedPeriod === 'month' || selectedPeriod === 'year' || selectedPeriod === 'quarter') && !selectedYear && (
                   <select
                     disabled
                     className="px-4 py-2 border-2 border-gray-300 bg-gray-100 text-gray-500 rounded-xl text-sm font-medium cursor-not-allowed"
@@ -1087,38 +1357,383 @@ const DocumentsRecords = () => {
                 )}
               </div>
             </div>
-            <p className="text-sm text-gray-500 mb-4">
-              {selectedPeriod === 'month' ? `Daily requests in ${selectedMonth ? `${selectedMonth}/${selectedYear}` : 'current month'}` :
-               selectedPeriod === 'year' ? `Monthly requests in ${selectedYear || currentYear}` :
-               'Requests over the last 12 months'}
-            </p>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="requests" stroke="#10b981" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-        
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                <h4 className="text-sm font-semibold text-green-800 mb-2 flex items-center gap-2">
-                  <DocumentTextIcon className="w-4 h-4" />
-                  Most Requested in Selected Period
-                </h4>
-                <p className="text-lg font-bold text-green-900">{getMostRequestedDocument(records, selectedPeriod, selectedYear, selectedMonth).type}</p>
-                <p className="text-sm text-green-700">{getMostRequestedDocument(records, selectedPeriod, selectedYear, selectedMonth).count} requests</p>
+
+            {/* Key Performance Indicators */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-green-600 font-medium">Total Requests</p>
+                    <p className="text-2xl font-bold text-green-700">{currentFilteredRecords.length}</p>
+                    <p className="text-xs text-green-500 mt-1">
+                      {selectedPeriod === 'quarter' ? 
+                        (selectedQuarter > 0 ? `Q${selectedQuarter} ${selectedYear || currentYear}` : `${selectedYear || currentYear}`) :
+                       selectedPeriod === 'month' ? 
+                        (selectedMonth > 0 ? `${selectedMonth}/${selectedYear || currentYear}` : 'current month') :
+                       selectedPeriod === 'year' ? `${selectedYear || currentYear}` :
+                       'All time'}
+                    </p>
+                  </div>
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                    <DocumentTextIcon className="w-6 h-6 text-green-600" />
+                  </div>
+                </div>
+                <div className="mt-2 w-full bg-green-200 rounded-full h-2">
+                  <div 
+                    className="bg-green-500 h-2 rounded-full transition-all duration-500" 
+                    style={{ width: `${Math.min(100, (currentFilteredRecords.length / 100) * 100)}%` }}
+                  ></div>
+                </div>
               </div>
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <h4 className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
-                  <DocumentTextIcon className="w-4 h-4" />
-                  Most Requested Overall
+
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-blue-600 font-medium">Approval Rate</p>
+                    <p className="text-2xl font-bold text-blue-700">
+                      {currentFilteredRecords.length > 0 ? Math.round((currentFilteredRecords.filter(r => r.status === 'Approved').length / currentFilteredRecords.length) * 100) : 0}%
+                    </p>
+                    <p className="text-xs text-blue-500 mt-1">{currentFilteredRecords.filter(r => r.status === 'Approved').length} approved</p>
+                  </div>
+                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <CheckCircleIcon className="w-6 h-6 text-blue-600" />
+                  </div>
+                </div>
+                <div className="mt-2 w-full bg-blue-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-500 h-2 rounded-full transition-all duration-500" 
+                    style={{ width: `${Math.min(100, currentFilteredRecords.length > 0 ? (currentFilteredRecords.filter(r => r.status === 'Approved').length / currentFilteredRecords.length) * 100 : 0)}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-purple-600 font-medium">Payment Rate</p>
+                    <p className="text-2xl font-bold text-purple-700">
+                      {currentFilteredRecords.length > 0 ? Math.round((currentFilteredRecords.filter(r => r.paymentStatus === 'paid').length / currentFilteredRecords.length) * 100) : 0}%
+                    </p>
+                    <p className="text-xs text-purple-500 mt-1">{currentFilteredRecords.filter(r => r.paymentStatus === 'paid').length} paid</p>
+                  </div>
+                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                    <CurrencyDollarIcon className="w-6 h-6 text-purple-600" />
+                  </div>
+                </div>
+                <div className="mt-2 w-full bg-purple-200 rounded-full h-2">
+                  <div 
+                    className="bg-purple-500 h-2 rounded-full transition-all duration-500" 
+                    style={{ width: `${Math.min(100, currentFilteredRecords.length > 0 ? (currentFilteredRecords.filter(r => r.paymentStatus === 'paid').length / currentFilteredRecords.length) * 100 : 0)}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-orange-50 to-red-50 border border-orange-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-orange-600 font-medium">Processing Time</p>
+                    <p className="text-2xl font-bold text-orange-700">
+                      {currentFilteredRecords.filter(r => r.status === 'Approved' && r.approvedDate).length > 0 
+                        ? Math.round(currentFilteredRecords.filter(r => r.status === 'Approved' && r.approvedDate)
+                            .reduce((acc, r) => {
+                              const requestDate = new Date(r.requestDate);
+                              const approvedDate = new Date(r.approvedDate);
+                              return acc + Math.round((approvedDate - requestDate) / (1000 * 60 * 60 * 24));
+                            }, 0) / currentFilteredRecords.filter(r => r.status === 'Approved' && r.approvedDate).length)
+                        : 0} days
+                    </p>
+                    <p className="text-xs text-orange-500 mt-1">average</p>
+                  </div>
+                  <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                    <ClockIcon className="w-6 h-6 text-orange-600" />
+                  </div>
+                </div>
+                <div className="mt-2 w-full bg-orange-200 rounded-full h-2">
+                  <div 
+                    className="bg-orange-500 h-2 rounded-full transition-all duration-500" 
+                    style={{ width: `${Math.min(100, 80)}%` }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Document Type Distribution */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+              <div className="bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-emerald-800">Document Type Distribution</h4>
+                  <span className="text-emerald-600 text-lg">📊</span>
+                </div>
+                <div className="space-y-2">
+                  {['Brgy Clearance', 'Brgy Indigency', 'Brgy Residency', 'Brgy Business Permit', 'Brgy Certification'].map(type => {
+                    const count = currentFilteredRecords.filter(r => r.documentType === type).length;
+                    const percentage = currentFilteredRecords.length > 0 ? Math.round((count / currentFilteredRecords.length) * 100) : 0;
+                    return (
+                      <div key={type} className="flex justify-between text-sm">
+                        <span className="text-emerald-600">{type.replace('Brgy ', '')}</span>
+                        <span className="font-semibold text-emerald-800">{count} ({percentage}%)</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-blue-800">Status Overview</h4>
+                  <span className="text-blue-600 text-lg">📈</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-blue-600">Approved</span>
+                    <span className="font-semibold text-blue-800">{currentFilteredRecords.filter(r => r.status === 'Approved').length}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-blue-600">Pending</span>
+                    <span className="font-semibold text-blue-800">{currentFilteredRecords.filter(r => r.status === 'Pending').length}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-blue-600">Processing</span>
+                    <span className="font-semibold text-blue-800">{currentFilteredRecords.filter(r => r.status === 'Processing').length}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-blue-600">Rejected</span>
+                    <span className="font-semibold text-blue-800">{currentFilteredRecords.filter(r => r.status === 'Rejected').length}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-purple-800">Payment Status</h4>
+                  <span className="text-purple-600 text-lg">💳</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-purple-600">Paid</span>
+                    <span className="font-semibold text-purple-800">{currentFilteredRecords.filter(r => r.paymentStatus === 'paid').length}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-purple-600">Unpaid</span>
+                    <span className="font-semibold text-purple-800">{currentFilteredRecords.filter(r => r.paymentStatus === 'unpaid').length}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-purple-600">No Payment</span>
+                    <span className="font-semibold text-purple-800">{currentFilteredRecords.filter(r => !r.paymentAmount || r.paymentAmount <= 0).length}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Smart Suggestions */}
+            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-lg font-bold text-indigo-800 flex items-center gap-2">
+                  <span className="text-xl">💡</span>
+                  Smart Suggestions
                 </h4>
-                <p className="text-lg font-bold text-blue-900">{getMostRequestedDocument(records, 'all').type}</p>
-                <p className="text-sm text-blue-700">{getMostRequestedDocument(records, 'all').count} requests</p>
+                <span className="text-sm text-indigo-600 bg-indigo-100 px-3 py-1 rounded-full">
+                  Based on {selectedPeriod === 'quarter' ? 
+                    (selectedQuarter > 0 ? `Q${selectedQuarter} ${selectedYear || currentYear}` : `${selectedYear || currentYear}`) :
+                   selectedPeriod === 'month' ? 
+                    (selectedMonth > 0 ? `${selectedMonth}/${selectedYear || currentYear}` : 'current month') :
+                   selectedPeriod === 'year' ? `${selectedYear || currentYear}` :
+                   'all time'} data
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {generateSuggestions().map((suggestion, index) => (
+                  <div key={index} className={`p-4 rounded-lg border-2 ${
+                    suggestion.type === 'success' ? 'border-green-200 bg-green-50' :
+                    suggestion.type === 'warning' ? 'border-yellow-200 bg-yellow-50' :
+                    'border-blue-200 bg-blue-50'
+                  }`}>
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl">{suggestion.icon}</span>
+                      <div className="flex-1">
+                        <h5 className={`font-semibold text-sm mb-1 ${
+                          suggestion.type === 'success' ? 'text-green-800' :
+                          suggestion.type === 'warning' ? 'text-yellow-800' :
+                          'text-blue-800'
+                        }`}>
+                          {suggestion.title}
+                        </h5>
+                        <p className={`text-sm mb-2 ${
+                          suggestion.type === 'success' ? 'text-green-700' :
+                          suggestion.type === 'warning' ? 'text-yellow-700' :
+                          'text-blue-700'
+                        }`}>
+                          {suggestion.message}
+                        </p>
+                        <button className={`text-xs font-medium px-3 py-1 rounded-full ${
+                          suggestion.type === 'success' ? 'bg-green-200 text-green-800 hover:bg-green-300' :
+                          suggestion.type === 'warning' ? 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300' :
+                          'bg-blue-200 text-blue-800 hover:bg-blue-300'
+                        } transition-colors`}>
+                          {suggestion.action}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {generateSuggestions().length === 0 && (
+                  <div className="col-span-2 text-center py-8">
+                    <span className="text-4xl mb-2 block">🎉</span>
+                    <p className="text-gray-600">Great job! No immediate suggestions at this time.</p>
+                    <p className="text-sm text-gray-500 mt-1">Keep up the excellent work!</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Chart Section */}
+            <div className="bg-gradient-to-r from-slate-50 to-blue-50 border border-slate-200 rounded-xl p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-lg font-bold text-slate-800">Request Trends</h4>
+                <p className="text-sm text-slate-600">
+                  {selectedPeriod === 'month' ? `Daily requests in ${selectedMonth ? `${selectedMonth}/${selectedYear}` : 'current month'}` :
+                   selectedPeriod === 'year' ? `Monthly requests in ${selectedYear || currentYear}` :
+                   'Requests over the last 12 months'}
+                </p>
+              </div>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="#64748b"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis 
+                    stroke="#64748b"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                    }}
+                  />
+                  <Legend />
+                  <Line 
+                    type="monotone" 
+                    dataKey="requests" 
+                    stroke="#10b981" 
+                    strokeWidth={3}
+                    dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 2 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Financial Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-emerald-600 font-medium">Total Revenue</p>
+                    <p className="text-xl font-bold text-emerald-700">
+                      ₱{currentFilteredRecords.reduce((sum, r) => sum + (parseFloat(r.paymentAmount) || 0), 0).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-emerald-500 mt-1">
+                      {selectedPeriod === 'quarter' ? 
+                        (selectedQuarter > 0 ? `Q${selectedQuarter} ${selectedYear || currentYear}` : `${selectedYear || currentYear}`) :
+                       selectedPeriod === 'month' ? 
+                        (selectedMonth > 0 ? `${selectedMonth}/${selectedYear || currentYear}` : 'current month') :
+                       selectedPeriod === 'year' ? `${selectedYear || currentYear}` :
+                       'All time'}
+                    </p>
+                  </div>
+                  <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
+                    <span className="text-emerald-600 font-bold">💰</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-blue-600 font-medium">Paid Amount</p>
+                    <p className="text-xl font-bold text-blue-700">
+                      ₱{currentFilteredRecords.filter(r => r.paymentStatus === 'paid').reduce((sum, r) => sum + (parseFloat(r.paymentAmount) || 0), 0).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-blue-500 mt-1">Collected</p>
+                  </div>
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-blue-600 font-bold">✅</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-yellow-600 font-medium">Pending Amount</p>
+                    <p className="text-xl font-bold text-yellow-700">
+                      ₱{currentFilteredRecords.filter(r => r.paymentStatus === 'unpaid' && r.paymentAmount > 0).reduce((sum, r) => sum + (parseFloat(r.paymentAmount) || 0), 0).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-yellow-500 mt-1">Outstanding</p>
+                  </div>
+                  <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+                    <span className="text-yellow-600 font-bold">⏳</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Most Requested Documents */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-green-800">Most Requested (Selected Period)</h4>
+                  <span className="text-green-600 text-lg">🏆</span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-lg font-bold text-green-900">
+                    {getMostRequestedDocument(records, selectedPeriod, selectedYear, selectedMonth, selectedQuarter).type}
+                  </p>
+                  <p className="text-sm text-green-700">
+                    {getMostRequestedDocument(records, selectedPeriod, selectedYear, selectedMonth, selectedQuarter).count} requests
+                  </p>
+                  <div className="w-full bg-green-200 rounded-full h-2">
+                    <div 
+                      className="bg-green-500 h-2 rounded-full transition-all duration-500" 
+                      style={{ 
+                        width: `${Math.min(100, currentFilteredRecords.length > 0 ? (getMostRequestedDocument(records, selectedPeriod, selectedYear, selectedMonth, selectedQuarter).count / currentFilteredRecords.length) * 100 : 0)}%` 
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-blue-800">Most Requested (All Time)</h4>
+                  <span className="text-blue-600 text-lg">📈</span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-lg font-bold text-blue-900">
+                    {getMostRequestedDocument(records, 'all').type}
+                  </p>
+                  <p className="text-sm text-blue-700">
+                    {getMostRequestedDocument(records, 'all').count} requests
+                  </p>
+                  <div className="w-full bg-blue-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-500" 
+                      style={{ 
+                        width: `${Math.min(100, records.length > 0 ? (getMostRequestedDocument(records, 'all').count / records.length) * 100 : 0)}%` 
+                      }}
+                    ></div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1201,17 +1816,32 @@ const DocumentsRecords = () => {
           {/* Enhanced Table */}
           <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
             <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4">
-              <h3 className="text-white font-semibold text-lg flex items-center gap-2">
-                <DocumentTextIcon className="w-5 h-5" />
-                {activeTab === 'requests' 
-                  ? (activeDocumentType === 'all' 
-                      ? 'Document Requests' 
-                      : `${activeDocumentType} Requests`)
-                  : (activeDocumentType === 'all' 
-                      ? 'Document Records' 
-                      : `${activeDocumentType} Records`)
-                }
-              </h3>
+              <div className="flex justify-between items-center">
+                <h3 className="text-white font-semibold text-lg flex items-center gap-2">
+                  <DocumentTextIcon className="w-5 h-5" />
+                  {activeTab === 'requests' 
+                    ? (activeDocumentType === 'all' 
+                        ? 'Document Requests' 
+                        : `${activeDocumentType} Requests`)
+                    : (activeDocumentType === 'all' 
+                        ? 'Document Records' 
+                        : `${activeDocumentType} Records`)
+                  }
+                </h3>
+                
+                {/* Only show Download Excel button for Document Records tab */}
+                {activeTab === 'records' && (
+                <button
+                  onClick={handleDownloadExcel}
+                  disabled={downloadingExcel || records.filter(r => r.paymentStatus === 'paid' && r.status === 'Approved').length === 0}
+                  className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center gap-2 backdrop-blur-sm border border-white/30"
+                  title="Download paid document records as Excel file"
+                >
+                  <TableCellsIcon className="w-4 h-4" />
+                  {downloadingExcel ? 'Exporting...' : 'Download Excel (Paid Only)'}
+                </button>
+                )}
+              </div>
             </div>
             
             <div className="overflow-x-auto">
